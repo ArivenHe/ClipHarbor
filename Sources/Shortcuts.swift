@@ -90,7 +90,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     var defaultKey: KeyCombination? {
         let command = NSEvent.ModifierFlags.command.rawValue
         let shiftCommand = NSEvent.ModifierFlags([.shift, .command]).rawValue
-        switch self {
+        return switch self {
         case .panel: KeyCombination(keyCode: 9, modifiers: NSEvent.ModifierFlags([.option, .command]).rawValue, key: "V")
         case .quit: KeyCombination(keyCode: 12, modifiers: command, key: "Q")
         case .settings: KeyCombination(keyCode: 43, modifiers: command, key: ",")
@@ -148,7 +148,7 @@ final class ShortcutManager: ObservableObject {
         InstallEventHandler(GetApplicationEventTarget(), { _, event, pointer in
             guard let event, let pointer else { return OSStatus(eventNotHandledErr) }
             var identifier = EventHotKeyID()
-            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, UInt32(MemoryLayout<EventHotKeyID>.size), nil, &identifier)
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier)
             guard status == noErr else { return status }
             let manager = Unmanaged<ShortcutManager>.fromOpaque(pointer).takeUnretainedValue()
             let index = Int(identifier.id) - 1
@@ -159,7 +159,8 @@ final class ShortcutManager: ObservableObject {
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            MainActor.assumeIsolated { self.handle(event) }
+            let shouldForward = MainActor.assumeIsolated { self.handle(event) != nil }
+            return shouldForward ? event : nil
         }
         if let message = registerGlobals() { error = message }
     }
