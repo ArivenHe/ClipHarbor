@@ -130,7 +130,7 @@ struct SettingsView: View {
             VStack(spacing: 14) {
                 Image(systemName: "doc.on.clipboard").font(.system(size: 56)).foregroundStyle(.tint)
                 Text("拾贴 · ClipHarbor").font(.title)
-                Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.1") · macOS 26+")
+                Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.0") · macOS 26+")
                 Text("复制即收纳，随时找回来。").foregroundStyle(.secondary)
                 KeyboardButton("GitHub") { NSWorkspace.shared.open(URL(string: "https://github.com/ArivenHe/ClipHarbor")!) }
             }

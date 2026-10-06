@@ -4,3 +4,7 @@ build/
 *.xcodeproj/
 *.xcworkspace/
 *.xcuserstate
+**/bin/
+**/obj/
+.vs/
+*.user

@@ -61,16 +61,43 @@ jobs:
         run: |
           rm -f "$RUNNER_TEMP/certificate.p12"
           if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db"; fi
+  windows:
+    name: Windows ${{ matrix.architecture }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test Windows core
+        run: dotnet test windows/ClipHarbor.Core.Tests/ClipHarbor.Core.Tests.csproj -c Release --logger "trx;LogFileName=windows-core.trx"
+      - name: Build WinUI 3 portable app
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Architecture '${{ matrix.architecture }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipHarbor-Windows-${{ matrix.architecture }}
+          path: build/windows-dist/*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-test-results-${{ matrix.architecture }}
+          path: windows/ClipHarbor.Core.Tests/TestResults/*.trx
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [build, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ClipHarbor-macOS-universal
+          pattern: ClipHarbor-*
+          merge-multiple: true
           path: dist
       - name: Publish GitHub Release
         env:

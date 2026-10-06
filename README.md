@@ -1,8 +1,33 @@
 # ClipHarbor · 拾贴
 
-复制即收纳，随时找回来。macOS 26+ 原生剪贴板管理工具，SwiftUI 与 Liquid Glass。
+复制即收纳，随时找回来。原生剪贴板管理工具：macOS 使用 SwiftUI 与 Liquid Glass，Windows 使用 WinUI 3 与 Fluent。
 
-## MVP
+## Windows 版
+
+支持 Windows 10 2004（19041）及以上、Windows 11，提供 x64 和 ARM64 便携 ZIP。完整解压后运行 `ClipHarbor.exe`，包含 .NET 和 Windows App SDK 运行时，无需单独安装它们。
+
+- 自动记录文本、RTF、HTML、链接、剪贴板图片及原文件引用；去重时保留收藏、备注和学习次数。
+- PNG／JPEG／HEIC 等文件引用归入“图片”，复制时仍保留原文件语义。
+- 图片、PDF（支持翻页）、文本／代码、系统支持的音视频直接在详情预览；其他格式可打开关联应用。
+- 搜索、分类、文件子类型、收藏、备注、常用内容学习、单条删除和清空；本地数据位于 `%LOCALAPPDATA%\ClipHarbor`。
+- 托盘常驻，隐藏任务栏图标；关闭窗口隐藏到托盘，通过托盘菜单退出。默认 `Ctrl + Alt + V` 唤起，可录制其他组合并检测占用。
+- Tab／Shift+Tab 按原生控件顺序移动；方向键选择，回车使用，空格预览，→ 编辑备注，← 回到分类，Esc 返回。双击记录直接尝试粘贴到此前应用。
+- 登录启动、记录开关、图片与数量限制、按类型保留、收藏豁免、应用排除、截图目录选择和学习门槛设置。
+- 监听图片目录 `Screenshots` 或自选目录的新图片，等待文件写入稳定再缓存；首次启用不导入已有图片。剪贴板截图由普通剪贴板监测接收。
+
+自动粘贴默认关闭，双击始终尝试粘贴。Windows 可能阻止向管理员权限窗口模拟输入，届时仍可手动粘贴。文件只保存原位置引用；HEIC 等图像与部分音视频需要系统提供相应解码器。Windows 当前不含 macOS 的“为每个操作配置快捷键”功能；普通键盘导航不依赖这些快捷键。
+
+在 Windows 使用 Visual Studio 2022 的 Windows 应用开发组件及 .NET 8 SDK，打开 [Windows 工程](windows/ClipHarbor.Windows/ClipHarbor.Windows.csproj)。PowerShell 构建：
+
+```powershell
+dotnet test windows/ClipHarbor.Core.Tests/ClipHarbor.Core.Tests.csproj -c Release
+./scripts/build-windows.ps1 -Architecture x64
+./scripts/build-windows.ps1 -Architecture ARM64
+```
+
+核心规则项目可在 macOS／Linux 用 .NET 8 测试；WinUI XAML 编译及界面运行需要 Windows。GitHub Actions 的 Windows runner 自动构建两个架构。便携包暂未配置 Authenticode 签名。
+
+## macOS 版
 
 - 自动记录文本、RTF、链接、图片和 Finder 文件引用；相同内容去重。
 - 自动保存 macOS `⌘⇧3/4` 截图到图片缓存，支持系统目录与自选目录。
@@ -80,12 +105,12 @@ bash scripts/build.sh
 
 ## 自动构建与发布
 
-推送 `main`、提交 PR 或手动运行 Actions：测试并上传 ZIP、DMG 和 SHA256 校验文件。
-推送 `v*` 标签：通过测试后自动创建 GitHub Release。
+推送 `main`、提交 PR 或手动运行 Actions：测试并上传 macOS ZIP／DMG、Windows x64／ARM64 ZIP 和 SHA256 校验文件。
+推送 `v*` 标签：所有平台构建成功后自动创建 GitHub Release。
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 默认产物使用 ad-hoc 签名，没有 Apple 公证，适合开发和自用；下载后可能被 Gatekeeper 拦截。正式独立分发需 Apple Developer Program，并设置仓库 Actions Secrets：

@@ -1,0 +1,111 @@
+<Window x:Class="ClipHarbor.Windows.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:core="using:ClipHarbor.Core"
+    Title="拾贴 · ClipHarbor">
+    <Grid x:Name="Root" KeyDown="Root_KeyDown">
+        <Grid.RowDefinitions><RowDefinition Height="48" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <Grid x:Name="AppTitleBar" Background="Transparent" Padding="20,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE77F;" FontSize="18" Foreground="{ThemeResource SystemControlForegroundAccentBrush}" />
+                <TextBlock Text="拾贴 · ClipHarbor" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed"
+            IsPaneToggleButtonVisible="False" IsPaneOpen="True" OpenPaneLength="180" IsSettingsVisible="True"
+            SelectionFollowsFocus="Enabled" SelectionChanged="Navigation_SelectionChanged" AutomationProperties.Name="内容分类">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="全部" Tag="all"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8A9;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="收藏" Tag="favorites"><NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="常用" Tag="frequent"><NavigationViewItem.Icon><FontIcon Glyph="&#xE945;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="系统截图" Tag="screenshots"><NavigationViewItem.Icon><FontIcon Glyph="&#xE722;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItemSeparator />
+                <NavigationViewItemHeader Content="类型" />
+                <NavigationViewItem Content="文本" Tag="Text"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8A4;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="链接" Tag="Link"><NavigationViewItem.Icon><FontIcon Glyph="&#xE71B;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="图片" Tag="Image"><NavigationViewItem.Icon><FontIcon Glyph="&#xEB9F;" /></NavigationViewItem.Icon></NavigationViewItem>
+                <NavigationViewItem Content="文件" Tag="Files"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8A5;" /></NavigationViewItem.Icon></NavigationViewItem>
+            </NavigationView.MenuItems>
+            <Grid Padding="20,8,20,16" RowSpacing="12">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <AutoSuggestBox x:Name="SearchBox" PlaceholderText="搜索内容、文件名或备注" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown" AutomationProperties.Name="搜索历史">
+                        <AutoSuggestBox.QueryIcon><SymbolIcon Symbol="Find" /></AutoSuggestBox.QueryIcon>
+                    </AutoSuggestBox>
+                    <ToggleButton x:Name="PauseButton" Grid.Column="1" Content="暂停" Click="Pause_Click" ToolTipService.ToolTip="暂停或恢复记录" AutomationProperties.Name="暂停记录" />
+                    <Button Grid.Column="2" Content="清空" Click="Clear_Click" ToolTipService.ToolTip="清空普通历史并保留收藏" />
+                </Grid>
+                <StackPanel Grid.Row="1" Spacing="8">
+                    <InfoBar x:Name="Feedback" IsOpen="False" IsClosable="True" Severity="Error" />
+                    <ComboBox x:Name="FileFilter" Header="文件类型" Visibility="Collapsed" SelectedIndex="0" SelectionChanged="FileFilter_SelectionChanged" HorizontalAlignment="Left" MinWidth="160">
+                        <ComboBoxItem Content="全部文件" Tag="all" />
+                        <ComboBoxItem Content="文档" Tag="Document" /><ComboBoxItem Content="表格" Tag="Spreadsheet" />
+                        <ComboBoxItem Content="演示" Tag="Presentation" /><ComboBoxItem Content="音频" Tag="Audio" />
+                        <ComboBoxItem Content="视频" Tag="Video" /><ComboBoxItem Content="压缩包" Tag="Archive" />
+                        <ComboBoxItem Content="代码" Tag="Code" /><ComboBoxItem Content="文件夹" Tag="Folder" /><ComboBoxItem Content="其他" Tag="Other" />
+                    </ComboBox>
+                </StackPanel>
+                <Grid Grid.Row="2" ColumnSpacing="20">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1.5*" /><ColumnDefinition Width="1" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <Grid>
+                        <ListView x:Name="RecordList" ItemsSource="{x:Bind VisibleItems}" SelectionMode="Single" SelectionChanged="RecordList_SelectionChanged"
+                            DoubleTapped="RecordList_DoubleTapped" PreviewKeyDown="RecordList_PreviewKeyDown" AutomationProperties.Name="剪贴板历史" HorizontalContentAlignment="Stretch">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="core:ClipRecord">
+                                    <Grid Padding="4,10" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="{x:Bind Glyph}" FontSize="20" VerticalAlignment="Top" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="6">
+                                            <TextBlock Text="{x:Bind Title}" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{x:Bind Metadata}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{x:Bind FavoriteLabel}" Foreground="{ThemeResource SystemControlForegroundAccentBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12" IsHitTestVisible="False">
+                            <FontIcon Glyph="&#xE77F;" FontSize="40" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="EmptyTitle" Text="等待你的下一次复制" FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock Text="复制文本、图片或文件后，它们会出现在这里。" TextWrapping="Wrap" MaxWidth="260" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </Grid>
+                    <Border Grid.Column="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled" IsTabStop="False">
+                        <StackPanel x:Name="Details" Spacing="12" Visibility="Collapsed">
+                            <TextBlock x:Name="DetailTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock x:Name="FilePathsText" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <ComboBox x:Name="PreviewFilePicker" Header="预览文件" SelectionChanged="PreviewFilePicker_SelectionChanged" Visibility="Collapsed" HorizontalAlignment="Stretch" />
+                            <ContentControl x:Name="PreviewHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+                            <Button x:Name="OpenFileButton" Content="打开原文件" Click="OpenFile_Click" HorizontalAlignment="Left" />
+                            <TextBox x:Name="NoteBox" Header="备注" PlaceholderText="添加备注" TextChanged="NoteBox_TextChanged" KeyDown="NoteBox_KeyDown" />
+                            <TextBlock x:Name="StatisticsText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="DateText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+                <Grid Grid.Row="3" RowSpacing="8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="CountText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="PreviewButton" Content="预览" Click="Preview_Click" IsEnabled="False" />
+                        <Button x:Name="FavoriteButton" Content="收藏" Click="Favorite_Click" IsEnabled="False" />
+                        <Button x:Name="MoreButton" Content="更多" IsEnabled="False">
+                            <Button.Flyout><MenuFlyout>
+                                <MenuFlyoutItem Text="复制为纯文本" Click="CopyPlain_Click" />
+                                <MenuFlyoutItem Text="粘贴到原应用" Click="Paste_Click" />
+                                <MenuFlyoutItem Text="在资源管理器中显示" Click="Reveal_Click" />
+                                <MenuFlyoutItem Text="允许／排除常用内容学习" Click="ExcludeLearning_Click" />
+                                <MenuFlyoutSeparator /><MenuFlyoutItem Text="删除记录" Click="Delete_Click" />
+                            </MenuFlyout></Button.Flyout>
+                        </Button>
+                        <Button x:Name="UseButton" Content="复制" Click="Use_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Tab 切换 · ↑↓ 选择 · 回车使用 · 空格预览 · 双击粘贴 · Esc 返回" FontSize="12" HorizontalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </Grid>
+            </Grid>
+        </NavigationView>
+    </Grid>
+</Window>
