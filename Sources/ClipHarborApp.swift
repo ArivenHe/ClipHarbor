@@ -33,6 +33,8 @@ struct ClipHarborApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    static weak var shared: AppDelegate?
+    override init() { super.init(); Self.shared = self }
     let store = ClipboardStore()
     private var panel: NSPanel?
     private var historyWindow: NSWindow?

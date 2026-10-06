@@ -18,7 +18,7 @@ struct HistoryView: View {
         }
     }
     private var selected: ClipItem? { visible.first { $0.id == selection } }
-    private var delegate: AppDelegate? { NSApp.delegate as? AppDelegate }
+    private var delegate: AppDelegate? { AppDelegate.shared }
     var body: some View {
         NavigationSplitView {
             List(selection: $filter) {
@@ -80,7 +80,7 @@ struct HistoryView: View {
             SettingsLink { Label("设置", systemImage: "gearshape") }
         }
         .onAppear { selection = visible.first?.id; if quick { searchFocused = true } }
-        .onChange(of: visible.map(\.id)) { _, ids in if selection == nil || !ids.contains(selection!) { selection = ids.first } }
+        .onChange(of: visible.map(\.id)) { _, ids in if selection.map { !ids.contains($0) } ?? true { selection = ids.first } }
         .onExitCommand { if quick { delegate?.closePanel() } }
         .onKeyPress(.downArrow) { move(1); return .handled }
         .onKeyPress(.upArrow) { move(-1); return .handled }
@@ -140,7 +140,7 @@ struct HistoryView: View {
 }
 
 @MainActor
-final class PreviewController: NSObject, QLPreviewPanelDataSource {
+final class PreviewController: NSObject, @preconcurrency QLPreviewPanelDataSource {
     static let shared = PreviewController()
     private var url: URL?
     func show(_ url: URL) {
