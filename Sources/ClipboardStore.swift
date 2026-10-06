@@ -8,14 +8,17 @@ final class ClipboardStore: ObservableObject {
     @Published var paused = false
     @Published var error: String?
     private var timer: Timer?
+    private var lastCleanup = Date.distantPast
     private var lastChange = NSPasteboard.general.changeCount
     let directory: URL
     var imageDirectory: URL { directory.appendingPathComponent("Images", isDirectory: true) }
-    private var defaults: UserDefaults { .standard }
+    private let defaults: UserDefaults
 
-    init() {
-        UserDefaults.standard.register(defaults: ["recordText": true, "recordImages": true, "recordFiles": true, "historyLimit": 1000, "retentionDays": 30, "imageLimitMB": 20])
-        directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClipHarbor", isDirectory: true)
+    init(directory storageDirectory: URL? = nil, defaults: UserDefaults = .standard, startMonitoring: Bool = true) {
+        self.defaults = defaults
+        defaults.register(defaults: ["recordText": true, "recordImages": true, "recordFiles": true, "historyLimit": 1000, "retentionDays": 30, "imageLimitMB": 20, "learningEnabled": true, "learningThreshold": 2, "watchScreenshots": true])
+        RetentionPolicy.migrate(defaults)
+        directory = storageDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClipHarbor", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
             let history = directory.appendingPathComponent("history.json")
@@ -23,12 +26,21 @@ final class ClipboardStore: ObservableObject {
                 items = try JSONDecoder().decode([ClipItem].self, from: Data(contentsOf: history))
             }
             prune()
+            save()
         } catch { self.error = "读取历史失败：\(error.localizedDescription)" }
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.poll() }
+        if startMonitoring {
+            timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.poll() }
+            }
         }
     }
     func poll() {
+        // Run expiration even when the clipboard is unchanged or recording is paused.
+        if Date().timeIntervalSince(lastCleanup) >= 30 {
+            let before = items
+            prune()
+            if before != items { save() }
+        }
         let board = NSPasteboard.general
         guard board.changeCount != lastChange else { return }
         lastChange = board.changeCount
@@ -60,24 +72,42 @@ final class ClipboardStore: ObservableObject {
         }
         guard var next = item else { return }
         next.source = sourceApp?.localizedName
+        add(next)
+    }
+    func add(_ newItem: ClipItem) {
+        var next = newItem
         if let index = items.firstIndex(where: { $0.sameContent(as: next) }) {
             next = items.remove(at: index)
             next.date = Date()
-        }
+            if defaults.bool(forKey: "learningEnabled") { next.captureCount = next.captures + 1 }
+            if let screenshot = newItem.screenshotURL { next.screenshotURL = screenshot }
+        } else if defaults.bool(forKey: "learningEnabled") { next.captureCount = 1 }
         items.insert(next, at: 0)
-        prune()
+        prune(); save()
+    }
+    func toggleLearningExclusion(_ id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].excludedFromLearning = !(items[index].excludedFromLearning ?? false)
         save()
     }
+    func resetLearning() {
+        for index in items.indices { items[index].captureCount = 1; items[index].useCount = 0; items[index].lastUsedAt = nil }
+        save()
+    }
+    func captureScreenshot(at url: URL) -> Bool {
+        guard let image = NSImage(contentsOf: url), let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff), let data = bitmap.representation(using: .png, properties: [:]) else { return false }
+        let maxBytes = max(1, defaults.integer(forKey: "imageLimitMB")) * 1024 * 1024
+        guard data.count <= maxBytes else { return false }
+        let name = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() + ".png"
+        do { try data.write(to: imageDirectory.appendingPathComponent(name), options: .atomic) }
+        catch { self.error = "保存截图失败：\(error.localizedDescription)"; return false }
+        add(ClipItem(kind: .image, imageName: name, source: "macOS 截图", screenshotURL: url))
+        return true
+    }
     func prune() {
-        let limit = max(1, defaults.integer(forKey: "historyLimit"))
-        let days = defaults.integer(forKey: "retentionDays")
-        let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
-        var count = 0
-        items.removeAll { item in
-            if item.favorite { return false }
-            count += 1
-            return count > limit || (days > 0 && item.date < cutoff)
-        }
+        lastCleanup = Date()
+        items = RetentionPolicy.keeping(items, defaults: defaults)
         cleanupImages()
     }
     func save() {
@@ -117,6 +147,10 @@ final class ClipboardStore: ObservableObject {
             if !plain, let rtf = item.richText { board.setData(rtf, forType: .rtf) }
         }
         lastChange = board.changeCount
+        if defaults.bool(forKey: "learningEnabled"), let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index].useCount = items[index].uses + 1
+            items[index].lastUsedAt = Date(); save()
+        }
         return true
     }
 }

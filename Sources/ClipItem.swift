@@ -50,9 +50,16 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var source: String?
     var favorite = false
     var note = ""
+    var screenshotURL: URL?
+    var captureCount: Int?
+    var useCount: Int?
+    var lastUsedAt: Date?
+    var excludedFromLearning: Bool?
+    var captures: Int { max(1, captureCount ?? 1) }
+    var uses: Int { max(0, useCount ?? 0) }
     var title: String {
         if kind == .files { return fileURLs.map(\.lastPathComponent).joined(separator: "、") }
-        if kind == .image { return "图片" }
+        if kind == .image { return screenshotURL?.lastPathComponent ?? "图片" }
         return String((text ?? "").prefix(240))
     }
     func matches(_ query: String) -> Bool {
