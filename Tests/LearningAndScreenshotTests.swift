@@ -45,7 +45,7 @@ final class LearningAndScreenshotTests: XCTestCase {
         try png.write(to: fresh)
         monitor.tick(); monitor.tick()
         XCTAssertEqual(store.items.count, 1)
-        XCTAssertEqual(store.items[0].screenshotURL, fresh)
+        XCTAssertEqual(try XCTUnwrap(store.items[0].screenshotURL).resolvingSymlinksInPath(), fresh.resolvingSymlinksInPath())
         let cached = store.imageDirectory.appendingPathComponent(try XCTUnwrap(store.items[0].imageName))
         try FileManager.default.removeItem(at: fresh)
         XCTAssertTrue(FileManager.default.fileExists(atPath: cached.path))
