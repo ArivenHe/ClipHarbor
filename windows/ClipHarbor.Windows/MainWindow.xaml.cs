@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private readonly DesktopBridge _desktop;
     private readonly Task _initialization;
     private ClipboardService? _clipboard;
+    private CloudSyncService? _sync;
     private ScreenshotWatcher? _screenshots;
     private readonly DispatcherTimer _cleanupTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private readonly DispatcherTimer _noteTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -42,7 +43,7 @@ public sealed partial class MainWindow : Window
         Navigation.SelectedItem = Navigation.MenuItems[0];
         _store.Changed += Refresh;
         _cleanupTimer.Tick += async (_, _) => await GuardAsync(async () => { _store.Prune(); await _store.NotifyAsync(); });
-        _noteTimer.Tick += async (_, _) => { _noteTimer.Stop(); await GuardAsync(_store.SaveAsync); };
+        _noteTimer.Tick += async (_, _) => { _noteTimer.Stop(); if (Selected is { } item) _sync?.MetadataChanged(item); await GuardAsync(_store.SaveAsync); };
         Root.Loaded += (_, _) => { if (!_dialogOpen) SearchBox.Focus(FocusState.Programmatic); };
         Navigation.IsEnabled = false;
         _initialization = InitializeServicesAsync();
@@ -54,6 +55,8 @@ public sealed partial class MainWindow : Window
             await _store.LoadAsync();
             _clipboard = new(_store, DispatcherQueue);
             _clipboard.Error += ShowError;
+            _sync = new(_store, _clipboard, DispatcherQueue);
+            _ = _sync.Initialize();
             _screenshots = new(_store, _clipboard, DispatcherQueue);
             if (!_desktop.SetHotkey(_store.Settings)) ShowError("全局唤起键被其他应用占用，请在设置中更改。托盘仍可打开历史。");
             _ready = true; Navigation.IsEnabled = true; Refresh(); _cleanupTimer.Start();
@@ -77,7 +80,7 @@ public sealed partial class MainWindow : Window
             case "history": ShowHistory(false); break;
             case "pause": TogglePause(); break;
             case "settings": ShowHistory(false); await ShowSettingsAsync(); break;
-            case "quit": await GuardAsync(async () => { _quitting = true; _cleanupTimer.Stop(); _noteTimer.Stop(); _screenshots?.Dispose(); _clipboard?.Dispose(); if (_ready) await _store.SaveAsync(); _desktop.Dispose(); Close(); Application.Current.Exit(); }); break;
+            case "quit": await GuardAsync(async () => { _quitting = true; _cleanupTimer.Stop(); _noteTimer.Stop(); _screenshots?.Dispose(); if (_sync is not null) await _sync.DisposeAsync(); _clipboard?.Dispose(); if (_ready) await _store.SaveAsync(); _desktop.Dispose(); Close(); Application.Current.Exit(); }); break;
         }
     }
     private void Refresh()
@@ -87,7 +90,7 @@ public sealed partial class MainWindow : Window
         var query = SearchBox.Text;
         var category = (FileFilter.SelectedItem as ComboBoxItem)?.Tag as string ?? "all";
         IEnumerable<ClipRecord> items = _filter == "frequent" ? _store.Frequent() : _store.Items;
-        var records = items.Where(i => (_filter switch
+        var records = items.Where(i => (i.SyncSpace is null || i.SyncSpace == _store.ActiveSyncSpace) && (_filter switch
         {
             "all" or "frequent" => true, "favorites" => i.Favorite, "screenshots" => i.ScreenshotPath is not null, _ => i.DisplayKind.ToString() == _filter
         }) && (_filter != "Files" || category == "all" || i.FilePaths.Any(p => FileTypes.Classify(p).ToString() == category)) && i.Matches(query)).ToList();
@@ -224,7 +227,7 @@ public sealed partial class MainWindow : Window
     private void NoteBox_TextChanged(object sender, TextChangedEventArgs args)
     {
         if (_updating || Selected is not { } item) return;
-        item.Note = NoteBox.Text; _noteTimer.Stop(); _noteTimer.Start();
+        item.Note = NoteBox.Text; _sync?.MetadataChanged(item); _noteTimer.Stop(); _noteTimer.Start();
     }
     private void PreviewFilePicker_SelectionChanged(object sender, SelectionChangedEventArgs args)
     {
@@ -236,7 +239,7 @@ public sealed partial class MainWindow : Window
     private async void CopyPlain_Click(object sender, RoutedEventArgs args) => await UseSelectedAsync(false, true);
     private async void Paste_Click(object sender, RoutedEventArgs args) => await UseSelectedAsync(true);
     private void Pause_Click(object sender, RoutedEventArgs args) => TogglePause();
-    private async void Favorite_Click(object sender, RoutedEventArgs args) { if (Selected is { } item) await GuardAsync(async () => { item.Favorite = !item.Favorite; await _store.NotifyAsync(); }); }
+    private async void Favorite_Click(object sender, RoutedEventArgs args) { if (Selected is { } item) await GuardAsync(async () => { item.Favorite = !item.Favorite; _sync?.MetadataChanged(item); await _store.NotifyAsync(); }); }
     private async void ExcludeLearning_Click(object sender, RoutedEventArgs args) { if (Selected is { } item) await GuardAsync(async () => { item.ExcludedFromLearning = !item.ExcludedFromLearning; await _store.NotifyAsync(); }); }
     private async void Delete_Click(object sender, RoutedEventArgs args) { if (Selected is { } item && await ConfirmAsync("删除这条记录？", "不会删除原文件。")) await GuardAsync(() => _store.DeleteAsync(item)); }
     private async void Clear_Click(object sender, RoutedEventArgs args) { if (await ConfirmAsync("清空普通历史？", "保留收藏，不会删除原文件。")) await GuardAsync(() => _store.ClearAsync(true)); }
@@ -283,7 +286,7 @@ public sealed partial class MainWindow : Window
         _dialogOpen = true;
         try
         {
-            var dialog = new SettingsDialog(_store, _screenshots?.Status ?? "", _desktop, _clipboard!, this) { XamlRoot = Root.XamlRoot };
+            var dialog = new SettingsDialog(_store, _screenshots?.Status ?? "", _desktop, _clipboard!, this, _sync!) { XamlRoot = Root.XamlRoot };
             await dialog.ShowAsync();
             _screenshots?.Dispose(); _screenshots = new(_store, _clipboard!, DispatcherQueue);
             UseButton.Content = _quick && _store.Settings.AutoPaste ? "粘贴" : "复制";

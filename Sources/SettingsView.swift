@@ -19,11 +19,12 @@ struct SettingsView: View {
     @State private var deleteAll = false
     @State private var accessibilityGranted = AXIsProcessTrusted()
     @FocusState private var pageFocused: Bool
-    private let pages = ["general", "shortcuts", "recording", "privacy", "screenshots", "learning", "about"]
+    private let pages = ["general", "sync", "shortcuts", "recording", "privacy", "screenshots", "learning", "about"]
     var body: some View {
         VStack(spacing: 0) {
             Picker("设置页面", selection: $tab) {
                 Text("通用").tag("general")
+                Text("同步").tag("sync")
                 Text("快捷键").tag("shortcuts")
                 Text("记录").tag("recording")
                 Text("隐私").tag("privacy")
@@ -35,6 +36,7 @@ struct SettingsView: View {
             Divider()
             Group {
                 switch tab {
+                case "sync": if let sync = AppDelegate.shared?.sync { SyncSettingsView(sync: sync) }
                 case "shortcuts": ShortcutSettingsView()
                 case "recording": recordingPage
                 case "privacy": privacyPage
@@ -95,7 +97,7 @@ struct SettingsView: View {
                     KeyboardToggle("文本与链接", isOn: $recordText)
                     KeyboardToggle("图片", isOn: $recordImages)
                     KeyboardToggle("原文件引用", isOn: $recordFiles)
-                    Text("文件不会被备份。移动或删除原文件可能导致引用失效。")
+                    Text("本地记录保存文件引用；开启文件同步后上传副本供其他设备粘贴。原文件移动或删除后，本地旧引用可能失效。")
                 }
                 Section("存储") {
                     KeyboardStepper("普通历史上限：\(historyLimit)", value: $historyLimit, in: 100...10000, step: 100)
@@ -121,7 +123,7 @@ struct SettingsView: View {
                     KeyboardToggle("暂停所有记录", isOn: $store.paused)
                 }
                 Section("本地数据") {
-                    Text("历史只保存在本机，不上传。支持过滤已声明的敏感剪贴板标记；不能保证识别所有密码。")
+                    Text("默认只在本机保存。开启跨设备同步后通过 HTTPS 上传到指定服务器；服务器管理员可读取内容。支持过滤已声明的敏感剪切板标记，不能保证识别所有密码。")
                     KeyboardButton("删除全部历史与收藏", role: .destructive) { deleteAll = true }
                 }
             }.formStyle(.grouped)
@@ -218,7 +220,7 @@ struct LearningSettingsView: View {
                 Text(enabled ? FrequentContent.summary(store.items, threshold: threshold) : "已关闭学习，不再累计新的复制和使用次数。")
             }
             Section("隐私与控制") {
-                Text("不调用 AI 服务，不上传文字或截图。通过本地规则排除疑似密钥和验证码，无法保证识别所有敏感内容。右键历史条目可选择不学习这条内容。")
+                Text("学习统计留在本机，不调用 AI 服务。开启跨设备同步后，选中的文字、图片和文件会上传到指定服务器。通过本地规则排除疑似密钥和验证码，无法保证识别所有敏感内容。")
                 KeyboardButton("重置学习记录") { reset = true }
             }
         }.formStyle(.grouped)

@@ -6,11 +6,29 @@ xcodebuild -project ClipHarbor.xcodeproj -scheme ClipHarbor -configuration Relea
   -derivedDataPath build -destination 'generic/platform=macOS' \
   ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
 APP=build/Build/Products/Release/ClipHarbor.app
+for architecture in arm64 x64; do
+  dotnet publish shared/ClipHarbor.SyncHost/ClipHarbor.SyncHost.csproj -c Release \
+    -r "osx-$architecture" --self-contained true -p:PublishSingleFile=false \
+    -o "$APP/Contents/Helpers/Sync/$architecture"
+done
+identity=${SIGNING_IDENTITY:--}
+signing_options=()
+if [[ "$identity" != '-' ]]; then signing_options=(--options runtime --timestamp); fi
+while IFS= read -r -d '' binary; do
+  if [[ "$(file -b "$binary")" == Mach-O* ]]; then
+    if [[ "$(basename "$binary")" == ClipHarbor.SyncHost ]]; then
+      codesign --force "${signing_options[@]}" --entitlements Resources/SyncHost.entitlements --sign "$identity" "$binary"
+    else
+      codesign --force "${signing_options[@]}" --sign "$identity" "$binary"
+    fi
+  fi
+done < <(find "$APP/Contents/Helpers" -type f -print0)
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
-  codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
+  codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$APP"
 else
-  codesign --force --deep --sign - "$APP"
+  codesign --force --sign - "$APP"
 fi
+codesign --verify --deep --strict "$APP"
 mkdir -p build/dist
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" build/dist/ClipHarbor.zip
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then

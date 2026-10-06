@@ -15,6 +15,9 @@ internal sealed class ClipboardService : IDisposable
     private uint _lastSequence;
     private bool _capturing, _pending, _disposed;
     public event Action<string>? Error;
+    public event Action<ClipRecord, long>? Copied;
+    public event Action<ClipRecord>? HistoricalCapture;
+    public long Version => NativeMethods.GetClipboardSequenceNumber();
     public ClipboardService(HistoryStore store, DispatcherQueue dispatcher)
     {
         _store = store; _dispatcher = dispatcher;
@@ -50,7 +53,7 @@ internal sealed class ClipboardService : IDisposable
         if (string.IsNullOrEmpty(source)) source = NativeMethods.ProcessName(NativeMethods.GetForegroundWindow());
         var data = Clipboard.GetContent();
         if (_store.Settings.IsExcluded(source)) { _lastSequence = sequence; return; }
-        if (data.AvailableFormats.Any(f => f is "ExcludeClipboardContentFromMonitorProcessing" or "org.nspasteboard.ConcealedType" or "org.nspasteboard.TransientType")) { _lastSequence = sequence; return; }
+        if (data.AvailableFormats.Any(f => f is "com.arivenhe.ClipHarbor.sync" or "ExcludeClipboardContentFromMonitorProcessing" or "org.nspasteboard.ConcealedType" or "org.nspasteboard.TransientType")) { _lastSequence = sequence; return; }
         if (data.Contains("CanIncludeInClipboardHistory"))
         {
             var value = await data.GetDataAsync("CanIncludeInClipboardHistory");
@@ -89,7 +92,8 @@ internal sealed class ClipboardService : IDisposable
         _lastSequence = sequence;
         if (record is null || _store.Paused || _disposed) return;
         record.Source = source;
-        await _store.AddAsync(record);
+        record = await _store.AddAsync(record);
+        Copied?.Invoke(record, sequence);
     }
     private static async Task<byte[]> EncodePngAsync(IRandomAccessStream stream)
     {
@@ -115,12 +119,14 @@ internal sealed class ClipboardService : IDisposable
             using var stream = await file.OpenReadAsync();
             var name = await _store.CacheImageAsync(await EncodePngAsync(stream));
             if (_store.Paused || _disposed) return;
-            await _store.AddAsync(new() { Kind = ClipKind.Image, ImageName = name, ScreenshotPath = path, Source = "Windows 截图" });
+            var item = await _store.AddAsync(new() { Kind = ClipKind.Image, ImageName = name, ScreenshotPath = path, Source = "Windows 截图" });
+            HistoricalCapture?.Invoke(item);
         }
         catch (Exception e) { Error?.Invoke("保存截图失败：" + e.Message); }
     }
-    public async Task CopyAsync(ClipRecord item, bool plain = false)
+    public async Task CopyAsync(ClipRecord item, bool plain = false, bool remote = false, long? expectedVersion = null)
     {
+        if (expectedVersion is long expected && Version != expected) throw new InvalidOperationException("本机已复制新内容，保留当前剪贴板。");
         var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
         if (item.Kind == ClipKind.Files)
         {
@@ -147,11 +153,19 @@ internal sealed class ClipboardService : IDisposable
                 if (item.Html is { } html) package.SetHtmlFormat(html);
             }
         }
+        if (expectedVersion is long original && Version != original) throw new InvalidOperationException("本机已复制新内容，保留当前剪贴板。");
+        if (remote) package.SetData("com.arivenhe.ClipHarbor.sync", "remote");
         Clipboard.SetContent(package);
         _lastSequence = NativeMethods.GetClipboardSequenceNumber();
         Clipboard.Flush();
         _lastSequence = NativeMethods.GetClipboardSequenceNumber();
-        await _store.RecordUseAsync(item);
+        if (!remote)
+        {
+            await _store.RecordUseAsync(item);
+            if ((plain || _store.Settings.PlainText) && item.Kind is ClipKind.Text or ClipKind.Link)
+                Copied?.Invoke(new ClipRecord { Kind = item.Kind, Text = item.Text }, _lastSequence);
+            else Copied?.Invoke(item, _lastSequence);
+        }
     }
     public void Dispose() { _disposed = true; Clipboard.ContentChanged -= OnChanged; }
 }

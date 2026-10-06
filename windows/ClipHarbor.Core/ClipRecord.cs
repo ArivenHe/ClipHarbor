@@ -10,6 +10,9 @@ public enum FileCategory { Document, Spreadsheet, Presentation, Image, Audio, Vi
 
 public sealed class ClipRecord
 {
+    public string? SyncSpace { get; set; }
+    public string? SyncRecordId { get; set; }
+    public string? SyncContentHash { get; set; }
     public Guid Id { get; set; } = Guid.NewGuid();
     public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
     public ClipKind Kind { get; set; }

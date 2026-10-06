@@ -17,6 +17,7 @@ public sealed class RetentionRule
 
 public sealed class AppSettings
 {
+    public ClipHarbor.Sync.SyncConfig Sync { get; set; } = new();
     public bool RecordText { get; set; } = true;
     public bool RecordImages { get; set; } = true;
     public bool RecordFiles { get; set; } = true;

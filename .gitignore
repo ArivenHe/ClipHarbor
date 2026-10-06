@@ -8,3 +8,7 @@ build/
 **/obj/
 .vs/
 *.user
+deploy/secrets/
+**/.env
+**/data/
+**/TestResults/

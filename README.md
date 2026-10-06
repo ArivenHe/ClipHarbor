@@ -2,6 +2,16 @@
 
 复制即收纳，随时找回来。原生剪贴板管理工具：macOS 使用 SwiftUI 与 Liquid Glass，Windows 使用 WinUI 3 与 Fluent。
 
+## 跨设备直接粘贴
+
+设置 → 同步：填写自建 ClipHarbor 同步服务器的 HTTPS 地址、账号和密码，两端登录同一账号，启用“跨设备直接粘贴”。一台电脑复制，另一台直接 `⌘V` / `Ctrl+V`；支持文本、RTF / HTML、图片和单个 / 多个普通文件。接收文件完整下载并校验后，写入 Finder / 资源管理器的原生文件剪贴板。第一版暂不传文件夹、符号链接和虚拟文件。
+
+账号令牌保存在 macOS 钥匙串 / Windows 凭据管理器，密码不写入设置 JSON。默认不导入既有历史；可以主动选择导入收藏或全部历史。首次连接、历史补齐和断网重连均不会把旧内容写入当前剪贴板。本机新复制、锁屏和更晚的远端复制会阻止过时文件覆盖当前内容。学习统计留在本机。
+
+服务端为 ASP.NET Core + PostgreSQL，附件 4 MiB 分块续传与 SHA256 校验。单文件 100 MiB、图片 20 MiB、一批最多 100 个文件 / 500 MiB；每账号和本机同步缓存默认预算 2 GiB。开启同步会上传所选类型的实际内容，服务器管理员可读取内容，第一版没有端到端加密。
+
+部署通过 GitHub Actions，使用 **SSH 用户名 + 密码**，并校验服务器主机公钥。客户端与服务端检查通过后才部署，服务器加载 CI 构建的镜像；失败回滚。配置、账号管理和备份见 [部署文档](docs/SERVER_DEPLOYMENT.md)，产品设计与后续范围见 [同步设计](docs/CLOUD_SYNC_DESIGN.md)。实际生产部署需要填写仓库 Secrets / Variables。
+
 ## Windows 版
 
 支持 Windows 10 2004（19041）及以上、Windows 11，提供 x64 和 ARM64 便携 ZIP。完整解压后运行 `ClipHarbor.exe`，包含 .NET 和 Windows App SDK 运行时，无需单独安装它们。
@@ -15,7 +25,7 @@
 - 登录启动、记录开关、图片与数量限制、按类型保留、收藏豁免、应用排除、截图目录选择和学习门槛设置。
 - 监听图片目录 `Screenshots` 或自选目录的新图片，等待文件写入稳定再缓存；首次启用不导入已有图片。剪贴板截图由普通剪贴板监测接收。
 
-自动粘贴默认关闭，双击始终尝试粘贴。Windows 可能阻止向管理员权限窗口模拟输入，届时仍可手动粘贴。文件只保存原位置引用；HEIC 等图像与部分音视频需要系统提供相应解码器。Windows 当前不含 macOS 的“为每个操作配置快捷键”功能；普通键盘导航不依赖这些快捷键。
+选择历史后的自动粘贴默认关闭，双击始终尝试粘贴；跨设备直接粘贴是独立开关。Windows 可能阻止向管理员权限窗口模拟输入，届时仍可手动粘贴。本地文件记录保存引用，开启文件同步后传输副本；HEIC 等格式需要系统解码器。普通键盘导航不依赖 macOS 的自定义操作快捷键。
 
 在 Windows 使用 Visual Studio 2022 的 Windows 应用开发组件及 .NET 8 SDK，打开 [Windows 工程](windows/ClipHarbor.Windows/ClipHarbor.Windows.csproj)。PowerShell 构建：
 
@@ -42,9 +52,9 @@ dotnet test windows/ClipHarbor.Core.Tests/ClipHarbor.Core.Tests.csproj -c Releas
 - Quick Look 预览；再次复制文件保留 Finder 文件语义。
 - 可选自动粘贴（需要辅助功能权限），默认仅复制。
 - 登录启动、记录类型、可自定义分钟／小时／天／周／永久保留期限、按类型覆盖、收藏过期策略、数量和图片大小限制、应用排除及清理设置。
-- 数据只存在本机 `~/Library/Application Support/ClipHarbor`。删除历史不会删除原文件。
+- 本机数据位于 `~/Library/Application Support/ClipHarbor`；开启同步后上传所选内容到指定服务器。删除历史不会删除原文件。
 
-文件只保存原位置引用；移动或删除后可能失效。应用排除以复制时前台应用判断，敏感标记过滤不能识别所有密码。原文件重新定位、导入导出、OCR、同步、应用内更新尚未实现。
+本地文件引用在原文件移动或删除后可能失效。应用排除以复制时前台应用判断，敏感标记过滤不能识别所有密码。原文件重新定位、独立导入导出、OCR 和应用内更新尚未实现。
 
 ## 快捷键与保留时间
 
@@ -79,11 +89,11 @@ Control + 系统截图快捷键产生的剪贴板图片，由普通剪贴板监�
 常用内容根据保留历史中的重复记录和再次复制次数整理，使用次数的排序权重更高。
 设置中可关闭学习、调整累计次数门槛、重置统计；右键单条内容可排除学习。
 关闭学习后停止累计，已有统计保留；删除历史同时删除该条统计。
-疑似密钥和验证码通过本地规则排除推荐，但不保证识别所有敏感内容。不上传内容、不调用 AI API。
+疑似密钥和验证码通过本地规则排除推荐，但不保证识别所有敏感内容。学习计算不调用 AI API；同步上传范围由同步设置控制。
 
 ## 本地开发
 
-需要 macOS 26、Xcode 26 和 XcodeGen：
+需要 macOS 26、Xcode 26、XcodeGen 和 .NET 10 SDK（打包内置同步组件）：
 
 ```bash
 brew install xcodegen
@@ -105,7 +115,7 @@ bash scripts/build.sh
 
 ## 自动构建与发布
 
-推送 `main`、提交 PR 或手动运行 Actions：测试并上传 macOS ZIP／DMG、Windows x64／ARM64 ZIP 和 SHA256 校验文件。
+推送 `main`、提交 PR 或手动运行 Verify and Deploy Sync：测试并上传 macOS ZIP／DMG、Windows x64／ARM64 ZIP 和 SHA256 校验文件。`main` 通过全部检查后生成服务端镜像包；配置 `DEPLOY_ENABLED=true` 后通过密码 SSH 自动部署。
 推送 `v*` 标签：所有平台构建成功后自动创建 GitHub Release。
 
 ```bash

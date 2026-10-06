@@ -16,6 +16,7 @@ internal sealed class SettingsDialog : ContentDialog
     private readonly HistoryStore _store;
     private readonly DesktopBridge _desktop;
     private readonly MainWindow _window;
+    private readonly CloudSyncService _sync;
     private readonly AppSettings _draft;
     private readonly InfoBar _feedback = new() { IsOpen = false, Severity = InfoBarSeverity.Error };
     private readonly ToggleSwitch _startup, _autoPaste, _plainText, _text, _images, _files, _favoriteExempt, _screenshots, _learning;
@@ -27,13 +28,14 @@ internal sealed class SettingsDialog : ContentDialog
     private readonly Dictionary<ClipKind, (ToggleSwitch Enabled, NumberBox Value, ComboBox Unit)> _typeRules = [];
     private bool _recording;
 
-    public SettingsDialog(HistoryStore store, string screenshotStatus, DesktopBridge desktop, ClipboardService clipboard, MainWindow window)
+    public SettingsDialog(HistoryStore store, string screenshotStatus, DesktopBridge desktop, ClipboardService clipboard, MainWindow window, CloudSyncService sync)
     {
-        _store = store; _desktop = desktop; _window = window;
+        _store = store; _desktop = desktop; _window = window; _sync = sync;
         _draft = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(store.Settings))!;
         Title = "拾贴设置"; PrimaryButtonText = "保存"; CloseButtonText = "取消"; DefaultButton = ContentDialogButton.Primary;
         Resources["ContentDialogMaxWidth"] = 720d;
         var pages = new Dictionary<string, StackPanel>();
+        pages.Add("跨设备同步", SyncPage());
         var general = Page(); pages.Add("通用", general);
         _startup = Switch("登录 Windows 时启动", StartupService.Enabled);
         _autoPaste = Switch("快捷面板回车后自动粘贴", _draft.AutoPaste);
@@ -54,7 +56,7 @@ internal sealed class SettingsDialog : ContentDialog
         _favoriteExempt = Switch("收藏免于时间和数量清理", _draft.FavoritesExempt);
         (_retentionValue, _retentionUnit) = RetentionControls(_draft.Retention);
         Add(recording, Heading("记录类型"), _text, _images, _files,
-            Description("文件只保存原位置引用，不备份原文件。PNG、JPEG、HEIC 等图片文件归入图片。"),
+            Description("本地记录保存文件引用；开启文件同步后，会上传文件副本供另一台设备粘贴。PNG、JPEG、HEIC 等图片文件归入图片。"),
             Heading("存储与保留"), _limit, _imageLimit, _favoriteExempt, _retentionValue, _retentionUnit,
             Description("保存较短的保留期限可能清理已有记录。永久只免于时间清理，普通记录仍受数量上限限制；暂停期间也会每 30 秒清理。"), Heading("按类型保留"));
         foreach (var kind in Enum.GetValues<ClipKind>())
@@ -93,7 +95,7 @@ internal sealed class SettingsDialog : ContentDialog
             await _store.NotifyAsync(); ShowStatus("学习次数已重置，内容、收藏和备注已保留。");
         });
         Add(learning, Heading("本地学习"), _learning, _threshold,
-            Description("按重复记录与使用次数排序，使用次数权重更高。不接入 AI 服务，不上传内容。疑似密钥、密码和验证码会排除推荐；这不能识别所有敏感内容。"), resetLearning);
+            Description("使用次数在本机计算，不接入 AI 服务。开启同步后，选中的内容类型会上传到你配置的服务器。疑似密钥、密码和验证码会排除推荐；这不能识别所有敏感内容。"), resetLearning);
 
         var privacy = Page(); pages.Add("隐私与清理", privacy);
         _excluded = new() { Header = "排除应用", Text = _draft.ExcludedApps, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 130, PlaceholderText = "每行一个程序名，例如 KeePass.exe" };
@@ -104,7 +106,7 @@ internal sealed class SettingsDialog : ContentDialog
         confirmation.Checked += (_, _) => delete.IsEnabled = true;
         confirmation.Unchecked += (_, _) => delete.IsEnabled = false;
         Add(privacy, Heading("排除与隐私"), _excluded,
-            Description("只保存在本机的 LocalAppData / ClipHarbor。历史没有应用级加密；应用排除和来源识别依赖提供剪贴板数据的进程。声明的敏感剪贴板标记会跳过记录，但无法识别所有密码。"), Heading("清理"), cleanup, confirmation, delete);
+            Description("本地数据在 LocalAppData / ClipHarbor，历史没有应用级加密。开启同步后会通过 HTTPS 上传到指定服务器；服务器管理员可读取内容。登录令牌存入 Windows 凭据管理器。声明的敏感剪贴板标记会跳过记录，但无法识别所有密码。"), Heading("清理"), cleanup, confirmation, delete);
 
         var about = Page(); pages.Add("关于", about);
         Add(about, Heading("拾贴 · ClipHarbor"), Description($"Windows 版 · WinUI 3 · {typeof(App).Assembly.GetName().Version?.ToString(3)}\n复制即收纳，随时找回来。"),
@@ -112,13 +114,44 @@ internal sealed class SettingsDialog : ContentDialog
             Description("图片、PDF、文本及系统支持的音视频可直接预览。Office 等其他格式可打开关联应用。HEIC 等格式可能需要 Windows 图像扩展。"),
             Description("便携目录移动后，登录启动的路径需要在这里重新保存。退出程序可使用系统托盘菜单。"));
         var navigation = new ComboBox { Header = "设置页面", ItemsSource = pages.Keys.ToList(), SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var scroll = new ScrollViewer { Content = general, MaxHeight = 440, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsTabStop = false };
+        var scroll = new ScrollViewer { Content = pages.Values.First(), MaxHeight = 440, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsTabStop = false };
         navigation.SelectionChanged += (_, _) => { if (navigation.SelectedItem is string key) { scroll.Content = pages[key]; scroll.ChangeView(null, 0, null); } };
         var layout = new StackPanel { Spacing = 12, Width = 580 };
         Add(layout, navigation, _feedback, scroll);
         Content = layout;
         PreviewKeyDown += RecordHotkey;
         PrimaryButtonClick += Save_Click;
+    }
+    private StackPanel SyncPage()
+    {
+        var page = Page(); var config = _sync.Config;
+        var url = new TextBox { Header = "服务器地址", PlaceholderText = "https://sync.example.com", Text = config.ServerUrl };
+        var user = new TextBox { Header = "账号", Text = config.Username };
+        var password = new PasswordBox { Header = "密码" };
+        var device = new TextBox { Header = "设备名称", Text = config.DeviceName };
+        var remember = Switch("保持登录", config.KeepSignedIn);
+        var import = new ComboBox { Header = "首次登录时导入本机历史", ItemsSource = new[] { "只同步之后新复制的内容", "导入已有收藏", "导入已有全部历史" }, SelectedIndex = 0 };
+        var state = Description(_sync.Status);
+        void Update() { state.Text = _sync.Status; }
+        _sync.Changed += Update; Closed += (_, _) => _sync.Changed -= Update;
+        var enabled = Switch("自动同步", config.Enabled); var direct = Switch("跨设备直接粘贴", config.DirectPaste);
+        var text = Switch("同步文本与链接", config.SyncText); var images = Switch("同步图片", config.SyncImages); var files = Switch("同步文件", config.SyncFiles);
+        Add(page, Heading("自建服务器"), url, user, password, device, remember, import,
+            Action("测试连接", async () => { await CloudSyncService.Test(url.Text); ShowStatus("连接成功，服务器协议兼容。"); }),
+            Action("登录并启用同步", async () => { await _sync.Login(url.Text, user.Text, password.Password, device.Text, remember.IsOn, import.SelectedIndex); password.Password = ""; enabled.IsOn = true; ShowStatus("已登录，正在同步。"); }),
+            Heading("同步方式"), enabled, direct, text, images, files,
+            Description("另一台设备复制后，在此电脑直接 Ctrl + V。文件下载完成前保留当前剪贴板；单文件上限 100 MB，一次最多 100 个文件、500 MB。第一版支持普通文件。连接期间只接收新复制的内容，重连补历史。"),
+            Action("应用同步选项", async () =>
+            {
+                var next = ClipHarbor.Sync.Protocol.Decode<ClipHarbor.Sync.SyncConfig>(ClipHarbor.Sync.Protocol.Encode(_sync.Config));
+                next.Enabled = enabled.IsOn; next.DirectPaste = direct.IsOn; next.SyncText = text.IsOn; next.SyncImages = images.IsOn; next.SyncFiles = files.IsOn; next.KeepSignedIn = remember.IsOn;
+                await _sync.Configure(next); ShowStatus("同步选项已保存。");
+            }), state,
+            Action("立即补同步历史", async () => { await _sync.SyncNow(); ShowStatus("历史已补同步。"); }),
+            Action("查看未同步内容与冲突草稿", () => { if (_sync.Conflicts() is { } path) Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); return Task.CompletedTask; }),
+            Action("退出登录", async () => { await _sync.Logout(); enabled.IsOn = false; }),
+            Description("这些按钮立即生效。服务器地址、账号和设备名称在登录时保存；密码只用于登录，不写入设置文件。关闭此窗口不会撤销已经应用的同步设置。"));
+        return page;
     }
     private static StackPanel Page() => new() { Spacing = 12 };
     private static TextBlock Heading(string title) => new() { Text = title, FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 0) };
@@ -161,6 +194,7 @@ internal sealed class SettingsDialog : ContentDialog
             if (!_desktop.SetHotkey(_draft)) { _desktop.SetHotkey(_store.Settings); throw new InvalidOperationException("唤起键已被系统或其他应用占用，请更换组合键。"); }
             try { StartupService.SetEnabled(_startup.IsOn); }
             catch { _desktop.SetHotkey(_store.Settings); throw; }
+            _draft.Sync = _store.Settings.Sync;
             await _store.UpdateSettingsAsync(_draft);
             args.Cancel = false;
         }

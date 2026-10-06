@@ -17,7 +17,7 @@ struct HistoryView: View {
     @State private var showActions = false
     @FocusState private var focus: Focus?
     private var visible: [ClipItem] {
-        let source = filter == "frequent" ? (learningEnabled ? FrequentContent.ranked(store.items, threshold: learningThreshold) : []) : store.items
+        let source = filter == "frequent" ? (learningEnabled ? FrequentContent.ranked(store.visibleItems, threshold: learningThreshold) : []) : store.visibleItems
         return source.filter { item in
             (filter == "all" || filter == "frequent" || (filter == "screenshots" ? item.screenshotURL != nil : (filter == "favorites" ? item.favorite : item.displayKind.rawValue == filter))) &&
             (filter != "files" || fileCategory == "all" || item.fileCategories.contains(fileCategory)) && item.matches(query)

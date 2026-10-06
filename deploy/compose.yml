@@ -1,0 +1,60 @@
+name: clipharbor
+services:
+  database:
+    image: ${POSTGRES_IMAGE:?}
+    environment:
+      POSTGRES_USER: clipharbor
+      POSTGRES_DB: clipharbor
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+    secrets: [database_password]
+    volumes: [database:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U clipharbor -d clipharbor"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  permissions:
+    image: ${SERVER_IMAGE:?}
+    user: root
+    entrypoint: [/bin/sh, -c, "chown -R 1654:1654 /data"]
+    volumes: [server:/data]
+    restart: "no"
+  server:
+    image: ${SERVER_IMAGE:?}
+    environment:
+      CLIPHARBOR_DB_HOST: database
+      CLIPHARBOR_DB_PASSWORD_FILE: /run/secrets/database_password
+      CLIPHARBOR_ADMIN_USERNAME: ${SYNC_ADMIN_USERNAME:?}
+      CLIPHARBOR_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      CLIPHARBOR_BUILD_COMMIT: ${BUILD_COMMIT:?}
+      CLIPHARBOR_TRUST_PROXY: "true"
+    secrets: [database_password, admin_password]
+    depends_on:
+      database: {condition: service_healthy}
+      permissions: {condition: service_completed_successfully}
+    volumes: [server:/data]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  caddy:
+    image: ${CADDY_IMAGE:?}
+    environment:
+      SYNC_DOMAIN: ${SYNC_DOMAIN:?}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+      - caddy_config:/config
+    depends_on: [server]
+    restart: unless-stopped
+secrets:
+  database_password:
+    file: ${SECRETS_DIR:?}/database_password
+  admin_password:
+    file: ${SECRETS_DIR:?}/admin_password
+volumes:
+  database:
+  server:
+  caddy:
+  caddy_config:

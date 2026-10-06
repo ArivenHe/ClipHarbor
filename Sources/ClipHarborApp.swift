@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var shared: AppDelegate?
     override init() { super.init(); Self.shared = self }
     let store = ClipboardStore()
+    lazy var sync = CloudSync(store: store)
     lazy var screenshotMonitor = ScreenshotMonitor(store: store)
     private var panel: NSPanel?
     private var historyWindow: NSWindow?
@@ -59,7 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShortcutManager.shared.globalHandler = { [weak self] action in self?.perform(action) }
         ShortcutManager.shared.start()
         screenshotMonitor.start()
+        sync.start()
     }
+    func applicationWillTerminate(_ notification: Notification) { sync.stop() }
     func perform(_ action: ShortcutAction) {
         let defaults = UserDefaults.standard
         if let tab = action.settingsTab { defaults.set(tab, forKey: "settingsTab"); openSettings(); return }

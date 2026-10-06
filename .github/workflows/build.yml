@@ -1,9 +1,8 @@
 name: Build and Release
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +24,9 @@ jobs:
           xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
       - name: Generate project and test
         run: |
           xcodegen generate

@@ -1,0 +1,8 @@
+**/bin
+**/obj
+.git
+build
+.build
+deploy/secrets
+**/.env
+**/data

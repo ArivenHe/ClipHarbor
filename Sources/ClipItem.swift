@@ -44,6 +44,7 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var kind: ClipKind
     var text: String?
     var richText: Data?
+    var html: String?
     var imageName: String?
     var fileURLs: [URL] = []
     var fileCategories: [String] = []
@@ -55,6 +56,9 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var useCount: Int?
     var lastUsedAt: Date?
     var excludedFromLearning: Bool?
+    var syncSpace: String?
+    var syncRecordId: String?
+    var syncContentHash: String?
     var captures: Int { max(1, captureCount ?? 1) }
     var uses: Int { max(0, useCount ?? 0) }
     // File-reference transport is preserved for copying, while browsing uses
@@ -72,6 +76,6 @@ struct ClipItem: Identifiable, Codable, Equatable {
         query.isEmpty || [title, text ?? "", note, source ?? ""].contains { $0.localizedCaseInsensitiveContains(query) }
     }
     func sameContent(as other: Self) -> Bool {
-        kind == other.kind && text == other.text && richText == other.richText && fileURLs == other.fileURLs && imageName == other.imageName
+        kind == other.kind && text == other.text && richText == other.richText && html == other.html && fileURLs == other.fileURLs && imageName == other.imageName
     }
 }

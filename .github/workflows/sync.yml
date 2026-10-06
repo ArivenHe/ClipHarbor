@@ -1,0 +1,95 @@
+name: Verify and Deploy Sync
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sync-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  clients:
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: write
+    secrets: inherit
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clipharbor
+          POSTGRES_PASSWORD: integration-test-only
+          POSTGRES_DB: clipharbor
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U clipharbor" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      CLIPHARBOR_DATABASE: Host=localhost;Port=5432;Database=clipharbor;Username=clipharbor;Password=integration-test-only
+      CLIPHARBOR_DATA_DIR: /tmp/clipharbor-test-data
+      CLIPHARBOR_TEST_PASSWORD: integration-test-only
+      CLIPHARBOR_TEST_URL: http://localhost:28080
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and test live sync against PostgreSQL
+        run: bash scripts/test-sync.sh
+  package:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [clients, server]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build production image and bundle dependencies
+        env:
+          SERVER_PLATFORM: ${{ vars.SERVER_PLATFORM || 'linux/amd64' }}
+        run: |
+          case "$SERVER_PLATFORM" in linux/amd64|linux/arm64) ;; *) exit 1;; esac
+          docker buildx build --platform "$SERVER_PLATFORM" --load --build-arg BUILD_COMMIT="$GITHUB_SHA" -t "clipharbor-sync:$GITHUB_SHA" -f server/ClipHarbor.Server/Dockerfile .
+          docker pull --platform "$SERVER_PLATFORM" postgres:16-alpine
+          docker pull --platform "$SERVER_PLATFORM" caddy:2-alpine
+          docker tag postgres:16-alpine "clipharbor-postgres:$GITHUB_SHA"
+          docker tag caddy:2-alpine "clipharbor-caddy:$GITHUB_SHA"
+          mkdir bundle
+          docker save "clipharbor-sync:$GITHUB_SHA" "clipharbor-postgres:$GITHUB_SHA" "clipharbor-caddy:$GITHUB_SHA" | gzip > bundle/images.tar.gz
+          cp deploy/compose.yml deploy/Caddyfile scripts/deploy-server.sh bundle/
+          printf '%s\n' "$GITHUB_SHA" > bundle/COMMIT
+          printf 'SERVER_IMAGE=clipharbor-sync:%s\nPOSTGRES_IMAGE=clipharbor-postgres:%s\nCADDY_IMAGE=clipharbor-caddy:%s\nBUILD_COMMIT=%s\n' "$GITHUB_SHA" "$GITHUB_SHA" "$GITHUB_SHA" "$GITHUB_SHA" > bundle/runtime.env
+          (cd bundle && sha256sum images.tar.gz compose.yml Caddyfile deploy-server.sh COMMIT > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipHarbor-server-bundle
+          path: bundle/
+          retention-days: 7
+  deploy:
+    if: vars.DEPLOY_ENABLED == 'true'
+    needs: package
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipHarbor-server-bundle
+          path: bundle
+      - name: Install SSH password transport
+        run: sudo apt-get update -qq && sudo apt-get install -y sshpass
+      - name: Deploy via SSH username and password
+        env:
+          SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST }}
+          SERVER_SSH_PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+          SERVER_SSH_USER: ${{ secrets.SERVER_SSH_USER }}
+          SSHPASS: ${{ secrets.SERVER_SSH_PASSWORD }}
+          SERVER_SSH_KNOWN_HOSTS: ${{ secrets.SERVER_SSH_KNOWN_HOSTS }}
+          SERVER_DEPLOY_DIR: ${{ vars.SERVER_DEPLOY_DIR || '/opt/clipharbor' }}
+          SYNC_DOMAIN: ${{ vars.SYNC_DOMAIN }}
+          SYNC_ADMIN_USERNAME: ${{ vars.SYNC_ADMIN_USERNAME || 'ariven' }}
+          SYNC_ADMIN_PASSWORD: ${{ secrets.SYNC_ADMIN_PASSWORD }}
+          SYNC_DATABASE_PASSWORD: ${{ secrets.SYNC_DATABASE_PASSWORD }}
+        run: bash scripts/ci-ssh-deploy.sh
