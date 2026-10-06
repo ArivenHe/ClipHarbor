@@ -35,6 +35,7 @@ internal static class NativeMethods
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] internal static extern bool Shell_NotifyIcon(uint message, ref NotifyIconData data);
     [DllImport("user32.dll", SetLastError = true)] internal static extern uint SendInput(uint count, Input[] inputs, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern uint RegisterWindowMessage(string message);
+    [DllImport("shell32.dll")] private static extern int SHGetKnownFolderPath(in Guid folderId, uint flags, nint token, out nint path);
 
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] internal struct MinMaxInfo { public Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
@@ -61,6 +62,13 @@ internal static class NativeMethods
     {
         GetWindowThreadProcessId(hwnd, out var process);
         return process == Environment.ProcessId;
+    }
+    internal static string ScreenshotsDirectory()
+    {
+        var id = new Guid("b7bede81-df94-4682-a7d8-57a52620b86f");
+        var result = SHGetKnownFolderPath(in id, 0x4000, 0, out var path); // KF_FLAG_DONT_VERIFY
+        try { return result >= 0 && path != 0 ? Marshal.PtrToStringUni(path)! : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots"); }
+        finally { if (path != 0) Marshal.FreeCoTaskMem(path); }
     }
     internal static string ProcessName(nint hwnd)
     {

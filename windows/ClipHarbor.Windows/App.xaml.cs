@@ -19,6 +19,6 @@ public partial class App : Application
         }
         _window = new MainWindow();
         _instance.Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(() => _window.ShowHistory(false));
-        if (!args.Arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("--background")) _window.ShowHistory(false);
+        if (!Environment.GetCommandLineArgs().Contains("--background")) _window.ShowHistory(false);
     }
 }

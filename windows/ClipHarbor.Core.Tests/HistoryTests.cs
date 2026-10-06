@@ -80,11 +80,15 @@ public sealed class HistoryTests : IDisposable
     public async Task CorruptHistoryIsPreservedForRecovery()
     {
         Directory.CreateDirectory(_directory);
+        Directory.CreateDirectory(Path.Combine(_directory, "Images"));
+        await File.WriteAllBytesAsync(Path.Combine(_directory, "Images", "cached.png"), [1, 2, 3]);
         await File.WriteAllTextAsync(Path.Combine(_directory, "history.json"), "{broken");
         var store = Store(); await store.LoadAsync();
         Assert.NotNull(store.LoadWarning);
         Assert.Single(Directory.GetFiles(_directory, "history.json.unreadable-*"));
         Assert.Empty(store.Items);
+        var imagesBackup = Assert.Single(Directory.GetDirectories(_directory, "history.json.unreadable-*.Images"));
+        Assert.True(File.Exists(Path.Combine(imagesBackup, "cached.png")));
     }
     [Theory]
     [InlineData("验证码: 123456")]

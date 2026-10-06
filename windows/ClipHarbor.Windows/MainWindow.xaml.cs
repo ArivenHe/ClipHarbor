@@ -44,7 +44,7 @@ public sealed partial class MainWindow : Window
         _cleanupTimer.Tick += async (_, _) => await GuardAsync(async () => { _store.Prune(); await _store.NotifyAsync(); });
         _noteTimer.Tick += async (_, _) => { _noteTimer.Stop(); await GuardAsync(_store.SaveAsync); };
         Root.Loaded += (_, _) => { if (!_dialogOpen) SearchBox.Focus(FocusState.Programmatic); };
-        Root.IsEnabled = false;
+        Navigation.IsEnabled = false;
         _initialization = InitializeServicesAsync();
     }
     private async Task InitializeServicesAsync()
@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
             _clipboard.Error += ShowError;
             _screenshots = new(_store, _clipboard, DispatcherQueue);
             if (!_desktop.SetHotkey(_store.Settings)) ShowError("全局唤起键被其他应用占用，请在设置中更改。托盘仍可打开历史。");
-            _ready = true; Root.IsEnabled = true; Refresh(); _cleanupTimer.Start();
+            _ready = true; Navigation.IsEnabled = true; Refresh(); _cleanupTimer.Start();
             if (_store.LoadWarning is { } warning) ShowError(warning);
         });
     }
@@ -77,7 +77,7 @@ public sealed partial class MainWindow : Window
             case "history": ShowHistory(false); break;
             case "pause": TogglePause(); break;
             case "settings": ShowHistory(false); await ShowSettingsAsync(); break;
-            case "quit": await GuardAsync(async () => { _quitting = true; _cleanupTimer.Stop(); _noteTimer.Stop(); _screenshots?.Dispose(); _clipboard?.Dispose(); await _store.SaveAsync(); _desktop.Dispose(); Close(); Application.Current.Exit(); }); break;
+            case "quit": await GuardAsync(async () => { _quitting = true; _cleanupTimer.Stop(); _noteTimer.Stop(); _screenshots?.Dispose(); _clipboard?.Dispose(); if (_ready) await _store.SaveAsync(); _desktop.Dispose(); Close(); Application.Current.Exit(); }); break;
         }
     }
     private void Refresh()

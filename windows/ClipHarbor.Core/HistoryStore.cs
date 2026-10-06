@@ -8,7 +8,6 @@ public sealed class HistoryStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, Converters = { new JsonStringEnumConverter() } };
     private readonly SemaphoreSlim _saveLock = new(1);
-    private bool _preserveUnreferencedImages;
     public string DirectoryPath { get; }
     public string ImageDirectory => Path.Combine(DirectoryPath, "Images");
     public List<ClipRecord> Items { get; private set; } = [];
@@ -35,7 +34,11 @@ public sealed class HistoryStore
         {
             var backup = path + ".unreadable-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             File.Move(path, backup);
-            if (name == "history.json") _preserveUnreferencedImages = true;
+            if (name == "history.json" && Directory.Exists(ImageDirectory))
+            {
+                Directory.Move(ImageDirectory, backup + ".Images");
+                Directory.CreateDirectory(ImageDirectory);
+            }
             LoadWarning = "部分本地数据无法读取，原文件已保留为 .unreadable 备份，可在数据目录查看。";
             return default;
         }
@@ -92,7 +95,7 @@ public sealed class HistoryStore
     public async Task NotifyAsync() { Changed?.Invoke(); await SaveAsync(); }
     public async Task UpdateSettingsAsync(AppSettings settings) { Settings = settings; Prune(); await NotifyAsync(); }
     public async Task DeleteAsync(ClipRecord item) { Items.Remove(item); CleanupImages(); await NotifyAsync(); }
-    public async Task ClearAsync(bool keepFavorites) { Items.RemoveAll(i => !keepFavorites || !i.Favorite); if (!keepFavorites) _preserveUnreferencedImages = false; CleanupImages(); await NotifyAsync(); }
+    public async Task ClearAsync(bool keepFavorites) { Items.RemoveAll(i => !keepFavorites || !i.Favorite); CleanupImages(); await NotifyAsync(); }
     public async Task RecordUseAsync(ClipRecord item)
     {
         if (!Settings.LearningEnabled) return;
@@ -114,7 +117,7 @@ public sealed class HistoryStore
     }
     private void CleanupImages()
     {
-        if (_preserveUnreferencedImages || !Directory.Exists(ImageDirectory)) return;
+        if (!Directory.Exists(ImageDirectory)) return;
         var kept = Items.Where(i => i.ImageName is not null).Select(i => i.ImageName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var path in Directory.EnumerateFiles(ImageDirectory, "*.png"))
             if (!kept.Contains(Path.GetFileName(path))) { try { File.Delete(path); } catch (IOException) { /* A preview may still hold the file open. */ } }

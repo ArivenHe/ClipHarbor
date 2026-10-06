@@ -1,5 +1,6 @@
 using ClipHarbor.Core;
 using Microsoft.UI.Dispatching;
+using ClipHarbor.Windows.Interop;
 using System.Collections.Concurrent;
 
 namespace ClipHarbor.Windows.Services;
@@ -18,7 +19,7 @@ internal sealed class ScreenshotWatcher : IDisposable
     {
         _store = store; _clipboard = clipboard; _dispatcher = dispatcher; _token = _cancel.Token;
         if (!store.Settings.WatchScreenshots) return;
-        var path = string.IsNullOrWhiteSpace(store.Settings.ScreenshotFolder) ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Screenshots") : store.Settings.ScreenshotFolder;
+        var path = string.IsNullOrWhiteSpace(store.Settings.ScreenshotFolder) ? NativeMethods.ScreenshotsDirectory() : store.Settings.ScreenshotFolder;
         try
         {
             Directory.CreateDirectory(path);
