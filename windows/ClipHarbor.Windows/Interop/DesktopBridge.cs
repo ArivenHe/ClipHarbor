@@ -26,7 +26,7 @@ internal sealed class DesktopBridge : IDisposable
         _tray = new()
         {
             Size = (uint)Marshal.SizeOf<NativeMethods.NotifyIconData>(), Window = hwnd, Id = 1,
-            Flags = 7, CallbackMessage = TrayMessage, Icon = NativeMethods.LoadIcon(0, (nint)32512),
+            Flags = 7 | 0x80, CallbackMessage = TrayMessage, Icon = NativeMethods.LoadIcon(0, (nint)32512),
             Tip = "拾贴 · ClipHarbor", Info = "", InfoTitle = ""
         };
         AddTray();
@@ -35,6 +35,8 @@ internal sealed class DesktopBridge : IDisposable
     private void AddTray()
     {
         if (!NativeMethods.Shell_NotifyIcon(0, ref _tray)) throw new InvalidOperationException("无法创建系统托盘图标。");
+        _tray.Version = 4;
+        NativeMethods.Shell_NotifyIcon(4, ref _tray); // NIM_SETVERSION: enable keyboard notifications
     }
     public void RememberTarget(nint hwnd) { if (NativeMethods.IsPasteTarget(hwnd)) PasteTarget = hwnd; }
     public bool SetHotkey(AppSettings settings)
@@ -56,8 +58,9 @@ internal sealed class DesktopBridge : IDisposable
         if (message == _taskbarCreated) { AddTray(); return 0; }
         if (message == TrayMessage)
         {
-            if ((uint)lParam == 0x0203) Command?.Invoke("history"); // double click
-            if ((uint)lParam == 0x0205 || (uint)lParam == 0x007B) ShowMenu();
+            var notification = (uint)lParam & 0xFFFF;
+            if (notification is 0x0203 or 0x0400 or 0x0401) Command?.Invoke("history"); // double click, NIN_SELECT, NIN_KEYSELECT
+            if (notification is 0x0205 or 0x007B) ShowMenu();
             return 0;
         }
         return NativeMethods.DefSubclassProc(hwnd, message, wParam, lParam);

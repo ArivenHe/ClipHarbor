@@ -13,7 +13,7 @@
         </Grid>
         <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Left" IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False" IsPaneOpen="True" OpenPaneLength="180" IsSettingsVisible="True"
-            SelectionFollowsFocus="Enabled" SelectionChanged="Navigation_SelectionChanged" AutomationProperties.Name="内容分类">
+            SelectionFollowsFocus="Enabled" SelectionChanged="Navigation_SelectionChanged" ItemInvoked="Navigation_ItemInvoked" AutomationProperties.Name="内容分类">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="全部" Tag="all"><NavigationViewItem.Icon><FontIcon Glyph="&#xE8A9;" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Content="收藏" Tag="favorites"><NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon></NavigationViewItem>

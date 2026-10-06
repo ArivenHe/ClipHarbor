@@ -107,7 +107,7 @@ internal sealed class SettingsDialog : ContentDialog
             Description("只保存在本机的 LocalAppData / ClipHarbor。历史没有应用级加密；应用排除和来源识别依赖提供剪贴板数据的进程。声明的敏感剪贴板标记会跳过记录，但无法识别所有密码。"), Heading("清理"), cleanup, confirmation, delete);
 
         var about = Page(); pages.Add("关于", about);
-        Add(about, Heading("拾贴 · ClipHarbor"), Description("Windows 版 · WinUI 3 · 0.2.0\n复制即收纳，随时找回来。"),
+        Add(about, Heading("拾贴 · ClipHarbor"), Description($"Windows 版 · WinUI 3 · {typeof(App).Assembly.GetName().Version?.ToString(3)}\n复制即收纳，随时找回来。"),
             Action("GitHub 项目", async () => { await Launcher.LaunchUriAsync(new Uri("https://github.com/ArivenHe/ClipHarbor")); }),
             Description("图片、PDF、文本及系统支持的音视频可直接预览。Office 等其他格式可打开关联应用。HEIC 等格式可能需要 Windows 图像扩展。"),
             Description("便携目录移动后，登录启动的路径需要在这里重新保存。退出程序可使用系统托盘菜单。"));

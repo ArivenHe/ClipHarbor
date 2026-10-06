@@ -171,11 +171,15 @@ public sealed partial class MainWindow : Window
         else RecordList.Focus(FocusState.Keyboard);
     }
     private void TogglePause() { _store.Paused = !_store.Paused; Refresh(); }
-    private async void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.IsSettingsSelected) { await ShowSettingsAsync(); return; }
+        if (args.IsSettingsSelected) return;
         _filter = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "all";
         Refresh();
+    }
+    private async void Navigation_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
+    {
+        if (args.IsSettingsInvoked) await ShowSettingsAsync();
     }
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) => Refresh();
     private async void SearchBox_KeyDown(object sender, KeyRoutedEventArgs args)
@@ -286,6 +290,11 @@ public sealed partial class MainWindow : Window
             Refresh();
         }
         catch (Exception e) { ShowError(e.Message); }
-        finally { _dialogOpen = false; SearchBox.Focus(FocusState.Programmatic); }
+        finally
+        {
+            _dialogOpen = false;
+            Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(item => item.Tag as string == _filter);
+            SearchBox.Focus(FocusState.Programmatic);
+        }
     }
 }
