@@ -6,6 +6,15 @@ namespace ClipHarbor.Core.Tests;
 
 public sealed class CloudSyncTests
 {
+    [Fact] public void WindowsCredentialVaultRoundTrip()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var id = "validation-" + Guid.NewGuid();
+        const string value = "local-vault-validation-placeholder";
+        try { ClipHarbor.Windows.Services.SyncCredentials.Write(id, value); Assert.Equal(value, ClipHarbor.Windows.Services.SyncCredentials.Read(id)); }
+        finally { ClipHarbor.Windows.Services.SyncCredentials.Delete(id); }
+        Assert.Null(ClipHarbor.Windows.Services.SyncCredentials.Read(id));
+    }
     [Fact] public async Task RemoteImportPreservesLocalLearningAndClearOnlyHides()
     {
         var path = Path.Combine(Path.GetTempPath(), "clipharbor-test-" + Guid.NewGuid());
@@ -36,5 +45,17 @@ public sealed class CloudSyncTests
     [Fact] public void UnsafeAttachmentNamesAreRejected()
     {
         foreach (var name in new[] { "..", "/tmp/file", "a/b", "a\\b", "a\0b" }) Assert.Throws<InvalidDataException>(() => Protocol.SafeName(name, new HashSet<string>()));
+    }
+    [Fact] public async Task CopyAfterLogoutStaysLocal()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "clipharbor-test-" + Guid.NewGuid());
+        try
+        {
+            var store = new HistoryStore(path); await store.LoadAsync(); store.ActiveSyncSpace = "old"; store.CaptureSyncSpace = null;
+            store.Items.Add(new ClipRecord { Text = "same", Favorite = true, SyncSpace = "old", SyncRecordId = Guid.NewGuid().ToString() });
+            var local = await store.AddAsync(new ClipRecord { Text = "same" });
+            Assert.Null(local.SyncSpace); Assert.False(local.Favorite); Assert.Equal(2, store.Items.Count);
+        }
+        finally { if (Directory.Exists(path)) Directory.Delete(path, true); }
     }
 }

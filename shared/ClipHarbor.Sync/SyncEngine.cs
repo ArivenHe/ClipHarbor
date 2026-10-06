@@ -33,18 +33,26 @@ public sealed class SyncEngine : IAsyncDisposable
     private volatile bool _live;
     private long _connection, _incomingSequence;
     private bool _epochBlocked;
+    private readonly string _instanceId;
     private DateTimeOffset _lastCleanup = DateTimeOffset.MinValue;
+    private long _lastProgress;
     public bool Connected => _live;
     public SyncEngine(SyncApi api, SyncConfig config, string root, string instanceId)
     {
-        Api = api; Config = config;
+        Api = api; Config = config; _instanceId = instanceId;
         var session = api.Session ?? throw new InvalidOperationException("需要登录。");
         Space = Protocol.Hash(Encoding.UTF8.GetBytes(api.BaseUri.AbsoluteUri + "|" + instanceId + "|" + session.AccountId));
         Journal = new(Path.Combine(root, "Sync", Space, session.SyncEpoch));
         if (Journal.GetState("epoch") == "") Journal.SetState("epoch", session.SyncEpoch);
-        Api.Progress = (received, total) => Status?.Invoke($"附件传输：{received / 1048576.0:F1} / {total / 1048576.0:F1} MB");
+        Api.Progress = (received, total) =>
+        {
+            var now = Environment.TickCount64;
+            if (received != total && now - Interlocked.Read(ref _lastProgress) < 250) return;
+            Interlocked.Exchange(ref _lastProgress, now);
+            Status?.Invoke($"附件传输：{received / 1048576.0:F1} / {total / 1048576.0:F1} MB");
+        };
     }
-    public void Start() { if (_run is null) _run = Run(); }
+    public void Start() { if (_run is null) { if (!Config.Enabled) Status?.Invoke("自动同步已暂停"); _run = Run(); } }
     public async Task Capture(WireRecord wire, List<string> paths, long clipboardVersion, bool realCopy)
     {
         if (!Config.Accepts(wire.Kind) || _epochBlocked) return;
@@ -116,6 +124,7 @@ public sealed class SyncEngine : IAsyncDisposable
     public async Task SyncNow()
     {
         if (_epochBlocked) { Status?.Invoke("服务器恢复了旧数据，请重新登录以建立新快照；旧队列已保留。"); return; }
+        await VerifyInstance(_lifetime.Token);
         await PullHistory(_lifetime.Token);
         foreach (var pending in Journal.Pending()) if (Config.Accepts(pending.Operation.Record?.Kind ?? Journal.Record(pending.Operation.RecordId)?.Kind ?? "text")) await SendPending(pending, _lifetime.Token);
         await PullHistory(_lifetime.Token);
@@ -129,13 +138,14 @@ public sealed class SyncEngine : IAsyncDisposable
             try
             {
                 Status?.Invoke("正在连接同步服务器");
+                await VerifyInstance(token);
                 using var socket = await Api.Connect(token);
                 Interlocked.Increment(ref _connection); _liveCopies.Clear(); _readyCopies.Clear(); _candidate = null;
                 var hello = await Notice(socket, token);
                 if (hello.Type != "hello") throw new InvalidDataException("服务器未建立实时会话。");
                 CheckEpoch(hello.SyncEpoch);
                 Interlocked.Exchange(ref _incomingSequence, long.Parse(hello.ClipboardSequence)); _live = true;
-                Status?.Invoke("已连接 · 可以跨设备直接粘贴");
+                Status?.Invoke(Config.DirectPaste ? "已连接 · 可以跨设备直接粘贴" : "已连接 · 本机直接粘贴已关闭");
                 using var connectionLife = CancellationTokenSource.CreateLinkedTokenSource(token);
                 var tick = Tick(connectionLife.Token);
                 try
@@ -158,6 +168,14 @@ public sealed class SyncEngine : IAsyncDisposable
     private void CheckEpoch(string epoch)
     {
         if (epoch != Journal.GetState("epoch")) { _epochBlocked = true; _live = false; throw new InvalidDataException("服务器数据空间已变化，请重新登录；原队列已保留。"); }
+    }
+    private async Task VerifyInstance(CancellationToken token)
+    {
+        if ((await Api.Test(token)).InstanceId != _instanceId)
+        {
+            _epochBlocked = true; _live = false;
+            throw new InvalidDataException("服务器实例已变化，请重新登录；本机历史和旧队列已保留。");
+        }
     }
     private static async Task<EventNotice> Notice(ClientWebSocket socket, CancellationToken token)
     {
@@ -250,6 +268,7 @@ public sealed class SyncEngine : IAsyncDisposable
         if (!_live || !Config.Enabled || copy.Connection != Interlocked.Read(ref _connection) || await ClipboardVersion() != copy.Version) { _readyCopies.TryRemove(id, out _); return; }
         await Api.Post<ClipboardLatest>("clipboard/events", new ClipboardPublish(copy.EventId, copy.Record.RecordId, Journal.GetState("epoch")), token);
         _readyCopies.TryRemove(id, out _);
+        Status?.Invoke("已发送到服务器 · 等待在线设备接收");
     }
     private async Task PullHistory(CancellationToken token)
     {

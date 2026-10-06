@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window
             _clipboard = new(_store, DispatcherQueue);
             _clipboard.Error += ShowError;
             _sync = new(_store, _clipboard, DispatcherQueue);
+            _sync.Changed += () => _desktop.SetSyncStatus(_sync.Status);
             _ = _sync.Initialize();
             _screenshots = new(_store, _clipboard, DispatcherQueue);
             if (!_desktop.SetHotkey(_store.Settings)) ShowError("全局唤起键被其他应用占用，请在设置中更改。托盘仍可打开历史。");

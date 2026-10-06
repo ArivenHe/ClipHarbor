@@ -14,6 +14,7 @@ public sealed class HistoryStore
     public AppSettings Settings { get; private set; } = new();
     public bool Paused { get; set; }
     public string? ActiveSyncSpace { get; set; }
+    public string? CaptureSyncSpace { get; set; }
     public event Action? Changed;
     public event Action<ClipRecord, string>? SyncMutation;
     public string? LoadWarning { get; private set; }
@@ -68,7 +69,7 @@ public sealed class HistoryStore
     public async Task<ClipRecord> AddAsync(ClipRecord record)
     {
         var key = record.ContentKey;
-        var previous = Items.FirstOrDefault(i => i.ContentKey == key && (i.SyncSpace is null || i.SyncSpace == ActiveSyncSpace));
+        var previous = Items.FirstOrDefault(i => i.ContentKey == key && (i.SyncSpace is null || i.SyncSpace == CaptureSyncSpace));
         if (previous is not null)
         {
             Items.Remove(previous);

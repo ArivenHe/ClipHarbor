@@ -8,7 +8,8 @@ using Npgsql;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = Protocol.PartBytes + 65536);
+// Rich JSON can expand control characters sixfold; each multipart block still has its own 4 MiB limit.
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 16 * 1024 * 1024);
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 var dataDirectory = Environment.GetEnvironmentVariable("CLIPHARBOR_DATA_DIR") ?? Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(dataDirectory);

@@ -31,4 +31,14 @@ final class CloudSyncTests: XCTestCase {
         let json = String(data: try JSONEncoder().encode(SyncConfiguration()), encoding: .utf8)!
         XCTAssertFalse(json.lowercased().contains("password")); XCTAssertFalse(json.lowercased().contains("token"))
     }
+    @MainActor func testCopyAfterLogoutStaysLocal() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ClipboardStore(directory: directory, defaults: UserDefaults(suiteName: UUID().uuidString)!, startMonitoring: false)
+        store.activeSyncSpace = "old"; store.captureSyncSpace = nil
+        store.items = [ClipItem(kind: .text, text: "same", favorite: true, syncSpace: "old", syncRecordId: UUID().uuidString)]
+        let local = store.add(ClipItem(kind: .text, text: "same"))
+        XCTAssertNil(local.syncSpace); XCTAssertFalse(local.favorite); XCTAssertEqual(store.items.count, 2)
+        XCTAssertEqual(ClipItem(kind: .text, text: "remote", captureCount: 0).captures, 0)
+    }
 }

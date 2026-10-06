@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Windows.Storage;
 using Windows.Graphics.Imaging;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace ClipHarbor.Windows.Services;
 
@@ -16,6 +17,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
     private SessionTokens? _session;
     private SyncEngine? _engine;
     private readonly CancellationTokenSource _life = new();
+    private readonly SemaphoreSlim _revocationGate = new(1, 1);
     private Task? _revocations;
     public SyncConfig Config => _store.Settings.Sync;
     public string Status { get; private set; } = "未登录";
@@ -41,6 +43,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
         try
         {
             if (Config.KeepSignedIn && Config.ServerUrl != "" && SyncCredentials.Read(Config.CredentialId) is { } json) _session = Protocol.Decode<SessionTokens>(json);
+            if (_session is not null) _store.CaptureSyncSpace = Config.LastSpace;
             if (_session is not null) await Connect();
         }
         catch (Exception error) { SetStatus("同步未连接：" + error.Message); }
@@ -55,6 +58,8 @@ internal sealed class CloudSyncService : IAsyncDisposable
         config.ServerUrl = Protocol.Server(server).AbsoluteUri.TrimEnd('/'); config.Username = username.Trim(); config.DeviceName = device.Trim(); config.KeepSignedIn = keepSignedIn; config.Enabled = true; config.CredentialId = Guid.NewGuid().ToString(); config.ServerInstanceId = null;
         using var api = new SyncApi(Protocol.Server(config.ServerUrl));
         var session = await api.Login(new(config.Username, password, config.DeviceName, config.DeviceId));
+        config.ServerInstanceId = api.Metadata!.InstanceId;
+        _store.CaptureSyncSpace = null;
         if (keepSignedIn) SyncCredentials.Write(config.CredentialId, Protocol.Encode(session));
         if (_engine is not null) await _engine.DisposeAsync();
         var oldCredential = Config.CredentialId; _store.Settings.Sync = config; _session = session;
@@ -78,13 +83,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
         try
         {
             var instance = Config.ServerInstanceId;
-            try
-            {
-                var meta = await api.Test();
-                if (instance is not null && instance != meta.InstanceId) throw new InvalidDataException("服务器实例已变化，请重新登录；本机历史和旧队列已保留。");
-                instance = meta.InstanceId; Config.ServerInstanceId = instance;
-            }
-            catch (Exception error) when ((error is HttpRequestException or OperationCanceledException) && Guid.TryParse(instance, out _)) { }
+            if (!Guid.TryParse(instance, out _)) { instance = (await api.Test()).InstanceId; Config.ServerInstanceId = instance; }
             var engine = new SyncEngine(api, Config, _store.DirectoryPath, instance!)
             {
                 ClipboardVersion = () => Task.FromResult(_clipboard.Version), Unlocked = () => Unlocked() && !_store.Paused,
@@ -102,7 +101,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
                 }),
                 Receive = (received, direct, expected) => Dispatch(() => Receive(received, direct, expected))
             };
-            _engine = engine; engine.Status += SetStatus; _store.ActiveSyncSpace = engine.Space; Config.LastSpace = engine.Space;
+            _engine = engine; engine.Status += SetStatus; _store.ActiveSyncSpace = _store.CaptureSyncSpace = engine.Space; Config.LastSpace = engine.Space;
             await _store.NotifyAsync(); engine.Start();
         }
         catch { api.Dispose(); throw; }
@@ -114,6 +113,10 @@ internal sealed class CloudSyncService : IAsyncDisposable
         var engine = _engine;
         if (engine is null || item.SyncSpace is not null && item.SyncSpace != engine.Space) return;
         var wire = new WireRecord { RecordId = item.SyncRecordId ?? item.Id.ToString(), Kind = item.Kind.ToString().ToLowerInvariant(), Text = item.Text, RtfBase64 = item.RichText is null ? null : Convert.ToBase64String(Encoding.UTF8.GetBytes(item.RichText)), Html = item.Html, CapturedAt = item.CapturedAt.ToString("O"), LastCapturedAt = Protocol.Now, Favorite = item.Favorite, Note = item.Note };
+        if (wire.Html is { } formatted)
+        {
+            try { wire.Html = HtmlFormatHelper.GetStaticFragment(formatted); } catch (ArgumentException) { wire.Html = null; }
+        }
         var paths = item.ImageName is { } image ? new List<string> { _store.ImagePath(image) } : item.FilePaths.ToList();
         try { await engine.Capture(wire, paths, version, real); } catch (Exception error) { SetStatus("同步失败：" + error.Message); }
     }
@@ -126,6 +129,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
             _store.Items.RemoveAll(i => i.SyncSpace == engine.Space && engine.Journal.Resolve(i.SyncRecordId ?? "") == wire.RecordId); await _store.NotifyAsync(); return;
         }
         var item = new ClipRecord { Id = Guid.Parse(wire.RecordId), Kind = Enum.Parse<ClipKind>(wire.Kind, true), Text = wire.Text, RichText = wire.RtfBase64 is null ? null : Encoding.UTF8.GetString(Convert.FromBase64String(wire.RtfBase64)), Html = wire.Html, FilePaths = received.FilePaths, CapturedAt = DateTimeOffset.Parse(wire.LastCapturedAt), Source = "另一台设备", Favorite = wire.Favorite, Note = wire.Note, SyncSpace = engine.Space, SyncRecordId = wire.RecordId, SyncContentHash = wire.ContentHash, CaptureCount = 0 };
+        if (wire.Html is not null) item.Html = HtmlFormatHelper.CreateHtmlFormat(wire.Html);
         if (string.Equals(wire.OriginDeviceId, Config.DeviceId, StringComparison.OrdinalIgnoreCase)) item.Source = _store.Items.FirstOrDefault(i => i.SyncSpace == engine.Space && i.SyncRecordId == wire.RecordId)?.Source ?? "本机";
         foreach (var file in item.FilePaths) await File.WriteAllTextAsync(file + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=" + engine.Api.BaseUri.AbsoluteUri + "\r\n");
         if (received.ImagePath is { } image)
@@ -156,16 +160,19 @@ internal sealed class CloudSyncService : IAsyncDisposable
     {
         var tokens = _session;
         if (_engine is not null) { await _engine.DisposeAsync(); _engine = null; }
-        _session = null; SyncCredentials.Delete(Config.CredentialId); Config.Enabled = false; await _store.SaveAsync();
+        _session = null; _store.CaptureSyncSpace = null; SyncCredentials.Delete(Config.CredentialId); Config.Enabled = false; await _store.SaveAsync();
         if (tokens is not null)
         {
-            try { using var api = new SyncApi(Protocol.Server(Config.ServerUrl, Config.AllowLocalHttp)); await api.Command("auth/logout", new LogoutRequest(tokens.RevokeToken), authenticated: false); }
+            try
+            {
+                using var api = new SyncApi(Protocol.Server(Config.ServerUrl, Config.AllowLocalHttp));
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_life.Token); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                await api.Command("auth/logout", new LogoutRequest(tokens.RevokeToken), timeout.Token, false);
+            }
             catch
             {
                 var id = "revoke-" + Guid.NewGuid(); SyncCredentials.Write(id, Protocol.Encode(new { serverUrl = Config.ServerUrl, revokeToken = tokens.RevokeToken }));
-                var path = Path.Combine(_store.DirectoryPath, "pending-revocations.json");
-                var pending = File.Exists(path) ? Protocol.Decode<List<string>>(await File.ReadAllTextAsync(path)) : [];
-                pending.Add(id); await File.WriteAllTextAsync(path, Protocol.Encode(pending));
+                await PendingRevocations(add: id);
             }
         }
         SetStatus("已退出登录，本机历史保留");
@@ -173,34 +180,47 @@ internal sealed class CloudSyncService : IAsyncDisposable
     [DllImport("user32.dll", SetLastError = true)] private static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] private static extern bool CloseDesktop(IntPtr desktop);
     private static bool Unlocked() { var desktop = OpenInputDesktop(0, false, 1); if (desktop == IntPtr.Zero) return false; CloseDesktop(desktop); return true; }
+    private async Task<List<string>> PendingRevocations(string? add = null, string? remove = null)
+    {
+        await _revocationGate.WaitAsync();
+        try
+        {
+            var path = Path.Combine(_store.DirectoryPath, "pending-revocations.json");
+            var ids = File.Exists(path) ? Protocol.Decode<List<string>>(await File.ReadAllTextAsync(path)) : [];
+            if (add is not null && !ids.Contains(add)) ids.Add(add);
+            if (remove is not null) ids.RemoveAll(id => id == remove);
+            if (add is not null || remove is not null)
+            {
+                var temporary = path + ".tmp";
+                await File.WriteAllTextAsync(temporary, Protocol.Encode(ids)); File.Move(temporary, path, true);
+            }
+            return ids;
+        }
+        finally { _revocationGate.Release(); }
+    }
     private async Task RetryRevocations()
     {
         while (!_life.IsCancellationRequested)
         {
             try
             {
-                var path = Path.Combine(_store.DirectoryPath, "pending-revocations.json");
-                if (File.Exists(path))
+                var ids = await PendingRevocations();
+                foreach (var id in ids)
                 {
-                    var ids = Protocol.Decode<List<string>>(await File.ReadAllTextAsync(path));
-                    foreach (var id in ids.ToList())
+                    try
                     {
-                        try
+                        if (SyncCredentials.Read(id) is { } json)
                         {
-                            if (SyncCredentials.Read(id) is { } json)
-                            {
-                                var revoke = Protocol.Decode<PendingRevocation>(json);
-                                using var api = new SyncApi(Protocol.Server(revoke.ServerUrl)); using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_life.Token); timeout.CancelAfter(TimeSpan.FromSeconds(15));
-                                await api.Command("auth/logout", new LogoutRequest(revoke.RevokeToken), timeout.Token, false);
-                            }
-                            SyncCredentials.Delete(id); ids.Remove(id);
+                            var revoke = Protocol.Decode<PendingRevocation>(json);
+                            using var api = new SyncApi(Protocol.Server(revoke.ServerUrl)); using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_life.Token); timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                            await api.Command("auth/logout", new LogoutRequest(revoke.RevokeToken), timeout.Token, false);
                         }
-                        catch (Exception error) when (error is not OperationCanceledException) { }
+                        await PendingRevocations(remove: id); SyncCredentials.Delete(id);
                     }
-                    await File.WriteAllTextAsync(path, Protocol.Encode(ids));
+                    catch (Exception) when (!_life.IsCancellationRequested) { }
                 }
             }
-            catch (Exception error) when (error is not OperationCanceledException) { }
+            catch (Exception) when (!_life.IsCancellationRequested) { }
             await Task.Delay(TimeSpan.FromMinutes(5), _life.Token);
         }
     }

@@ -1,6 +1,6 @@
 {$SYNC_DOMAIN} {
     request_body {
-        max_size 5MB
+        max_size 16MB
     }
     reverse_proxy server:8080
 }

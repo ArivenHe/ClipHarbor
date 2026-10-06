@@ -42,13 +42,7 @@ sealed class NativeBridge
         try
         {
             var instance = config.ServerInstanceId;
-            try
-            {
-                var meta = await api.Test(life.Token);
-                if (instance is not null && instance != meta.InstanceId) throw new InvalidDataException("服务器实例已变化，请重新登录；本机历史和旧队列已保留。");
-                instance = meta.InstanceId; config.ServerInstanceId = instance;
-            }
-            catch (Exception error) when ((error is HttpRequestException or OperationCanceledException) && Guid.TryParse(instance, out _)) { }
+            if (!Guid.TryParse(instance, out _)) { instance = (await api.Test(life.Token)).InstanceId; config.ServerInstanceId = instance; }
             await State();
             var next = new SyncEngine(api, config, root, instance!)
             {
@@ -118,6 +112,7 @@ sealed class NativeBridge
                     using (var api = new SyncApi(Protocol.Server(next.ServerUrl)))
                     {
                         var tokens = await api.Login(new(next.Username, p.GetProperty("password").GetString()!, next.DeviceName, next.DeviceId), life.Token);
+                        next.ServerInstanceId = api.Metadata!.InstanceId;
                         if (engine is not null) { await engine.DisposeAsync(); engine = null; }
                         config = next; await Persist(tokens); await Connect(); result = new { config };
                     }
@@ -133,14 +128,20 @@ sealed class NativeBridge
                     if (engine is not null)
                     {
                         var recordId = p.GetProperty("recordId").GetString()!; var type = p.GetProperty("type").GetString()!;
-                        if (type == "hide") engine.Hide(recordId); else if (type == "delete") engine.Delete(recordId);
+                        if (type == "hide") engine.Hide(recordId);
+                        else if (type == "delete") engine.Delete(recordId);
                         else engine.Edit(recordId, type, p.TryGetProperty("favorite", out var favorite) ? favorite.GetBoolean() : null, p.TryGetProperty("note", out var note) ? note.GetString() : null);
                     }
                     break;
                 case "sync": if (engine is not null) await engine.SyncNow(); break;
                 case "conflicts": result = new { path = engine?.Journal.ExportFailures() }; break;
                 case "revoke":
-                    using (var api = new SyncApi(Protocol.Server(p.GetProperty("server").GetString()!))) await api.Command("auth/logout", new LogoutRequest(p.GetProperty("revokeToken").GetString()), life.Token, false);
+                    using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(life.Token))
+                    using (var api = new SyncApi(Protocol.Server(p.GetProperty("server").GetString()!)))
+                    {
+                        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                        await api.Command("auth/logout", new LogoutRequest(p.GetProperty("revokeToken").GetString()), timeout.Token, false);
+                    }
                     break;
                 case "logout":
                     if (engine is not null) { await engine.DisposeAsync(); engine = null; }

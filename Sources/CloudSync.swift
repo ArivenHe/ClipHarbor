@@ -64,6 +64,7 @@ final class CloudSync: ObservableObject {
         self.store = store
         config = (UserDefaults.standard.data(forKey: "syncConfiguration").flatMap { try? JSONDecoder().decode(SyncConfiguration.self, from: $0) }) ?? SyncConfiguration()
         if config.keepSignedIn { session = SyncKeychain.read(config.credentialId) }
+        if session != nil { store.captureSyncSpace = store.activeSyncSpace }
         store.captured = { [weak self] item, version, real in self?.capture(item, version: version, real: real) }
         store.syncMutation = { [weak self] item, type in self?.mutate(item, type: type) }
     }
@@ -148,10 +149,11 @@ final class CloudSync: ObservableObject {
             case "persist":
                 guard let value = params["session"], let credential = params["credentialId"] as? String else { throw SyncFailure("登录信息格式无效。") }
                 let data = try JSONSerialization.data(withJSONObject: value)
+                if credential != config.credentialId { store.captureSyncSpace = nil }
                 if params["keepSignedIn"] as? Bool == true { try SyncKeychain.write(credential, data: data) } else { SyncKeychain.delete(credential) }
                 session = data
             case "space":
-                space = params["space"] as? String; store.activeSyncSpace = space; UserDefaults.standard.set(space, forKey: "activeSyncSpace")
+                space = params["space"] as? String; store.activeSyncSpace = space; store.captureSyncSpace = space; UserDefaults.standard.set(space, forKey: "activeSyncSpace")
             case "configuration":
                 if let value = params["config"] { config = try JSONDecoder().decode(SyncConfiguration.self, from: JSONSerialization.data(withJSONObject: value)); saveConfiguration() }
             case "bind": bind(params)
@@ -237,17 +239,22 @@ final class CloudSync: ObservableObject {
     }
     func logout() async throws {
         let result = try await command("logout"); let response = try JSONSerialization.jsonObject(with: result) as? [String: Any]
-        session = nil; SyncKeychain.delete(config.credentialId); config.enabled = false; saveConfiguration()
+        session = nil; store.captureSyncSpace = nil; SyncKeychain.delete(config.credentialId); config.enabled = false; saveConfiguration()
         if let token = response?["revokeToken"] as? String, let server = response?["server"] as? String {
             let id = "revoke-" + UUID().uuidString; try SyncKeychain.write(id, data: JSONSerialization.data(withJSONObject: ["server": server, "revokeToken": token]))
             var ids = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []; ids.append(id); UserDefaults.standard.set(ids, forKey: "syncRevocations"); await retryRevocations()
         }
     }
     private func retryRevocations() async {
-        var pending = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []
+        let pending = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []
         for id in pending {
             guard let data = SyncKeychain.read(id), let params = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            do { _ = try await command("revoke", params: params); SyncKeychain.delete(id); pending.removeAll { $0 == id }; UserDefaults.standard.set(pending, forKey: "syncRevocations") } catch { }
+            do {
+                _ = try await command("revoke", params: params)
+                SyncKeychain.delete(id)
+                var current = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []
+                current.removeAll { $0 == id }; UserDefaults.standard.set(current, forKey: "syncRevocations")
+            } catch { }
         }
     }
     private func disconnected() {

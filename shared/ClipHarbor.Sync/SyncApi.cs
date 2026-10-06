@@ -11,6 +11,7 @@ public sealed class SyncApi : IDisposable
     private readonly SemaphoreSlim _refresh = new(1, 1);
     public Uri BaseUri { get; }
     public SessionTokens? Session { get; private set; }
+    public ServerMeta? Metadata { get; private set; }
     public Func<SessionTokens, Task>? PersistSession { get; set; }
     public Action<long, long>? Progress { get; set; }
     public SyncApi(Uri server, SessionTokens? session = null, HttpMessageHandler? handler = null)
@@ -24,7 +25,7 @@ public sealed class SyncApi : IDisposable
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(15));
         var meta = await Get<ServerMeta>("meta", timeout.Token, false);
         if (meta.Product != "ClipHarbor.Sync" || meta.ProtocolVersion != Protocol.Version || !Guid.TryParse(meta.InstanceId, out _)) throw new InvalidDataException("服务器不是兼容的 ClipHarbor 同步服务。");
-        return meta;
+        return Metadata = meta;
     }
     public async Task<SessionTokens> Login(LoginRequest request, CancellationToken token = default)
     {

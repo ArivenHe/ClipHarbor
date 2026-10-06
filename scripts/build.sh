@@ -12,14 +12,14 @@ for architecture in arm64 x64; do
     -o "$APP/Contents/Helpers/Sync/$architecture"
 done
 identity=${SIGNING_IDENTITY:--}
-signing_options=()
-if [[ "$identity" != '-' ]]; then signing_options=(--options runtime --timestamp); fi
+signing_options=(--force --sign "$identity")
+if [[ "$identity" != '-' ]]; then signing_options+=(--options runtime --timestamp); fi
 while IFS= read -r -d '' binary; do
   if [[ "$(file -b "$binary")" == Mach-O* ]]; then
     if [[ "$(basename "$binary")" == ClipHarbor.SyncHost ]]; then
-      codesign --force "${signing_options[@]}" --entitlements Resources/SyncHost.entitlements --sign "$identity" "$binary"
+      codesign "${signing_options[@]}" --entitlements Resources/SyncHost.entitlements "$binary"
     else
-      codesign --force "${signing_options[@]}" --sign "$identity" "$binary"
+      codesign "${signing_options[@]}" "$binary"
     fi
   fi
 done < <(find "$APP/Contents/Helpers" -type f -print0)

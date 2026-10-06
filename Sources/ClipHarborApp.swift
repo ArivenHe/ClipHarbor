@@ -27,12 +27,18 @@ struct ClipHarborApp: App {
             Button("打开快捷面板") { delegate.togglePanel() }
             Button("打开历史") { delegate.openHistory() }
             Toggle("暂停记录", isOn: Binding(get: { delegate.store.paused }, set: { delegate.store.paused = $0 }))
+            SyncMenuStatus(sync: delegate.sync)
             Divider()
             Button("设置…") { delegate.openSettings() }
             Button("退出拾贴") { NSApp.terminate(nil) }
         }
         Settings { SettingsView(store: delegate.store).frame(width: 640, height: 650) }
     }
+}
+
+private struct SyncMenuStatus: View {
+    @ObservedObject var sync: CloudSync
+    var body: some View { if !sync.config.serverUrl.isEmpty { Text(sync.status).font(.caption) } }
 }
 
 @MainActor

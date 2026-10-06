@@ -22,7 +22,7 @@ public static class Protocol
     public static string Encode<T>(T value) => JsonSerializer.Serialize(value, Json);
     public static T Decode<T>(string json) => JsonSerializer.Deserialize<T>(json, Json) ?? throw new InvalidDataException("服务器返回了空数据。");
     public static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    public static bool IsHash(string hash) => hash.Length == 64 && hash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+    public static bool IsHash(string? hash) => hash is { Length: 64 } && hash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     public static string Now => DateTimeOffset.UtcNow.ToString("O");
 
     public static Uri Server(string input, bool allowLocalHttp = false)
@@ -36,7 +36,7 @@ public static class Protocol
 
     public static string SafeName(string name, ISet<string> used)
     {
-        if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.IndexOfAny(['/', '\\', '\0']) >= 0)
+        if (string.IsNullOrWhiteSpace(name) || name is "." or ".." || name.IndexOfAny(['/', '\\', '\0']) >= 0 || Encoding.UTF8.GetByteCount(name) > 1024)
             throw new InvalidDataException("文件清单包含不安全的名称。");
         var safe = new string(name.Normalize(NormalizationForm.FormC).Select(c => c < 32 || "<>:\"|?*".Contains(c) ? '_' : c).ToArray()).TrimEnd(' ', '.');
         if (safe.Length == 0) safe = "file";
@@ -104,6 +104,7 @@ public sealed class WireRecord
 
     public void Validate()
     {
+        if (Files is null || Note is null || Files.Any(f => f is null)) throw new InvalidDataException("记录缺少有效字段。");
         if (SchemaVersion != Protocol.Version || !Guid.TryParse(RecordId, out _) || Kind is not ("text" or "link" or "image" or "files"))
             throw new InvalidDataException("记录格式不兼容。");
         if (Encoding.UTF8.GetByteCount(Text ?? "") + Encoding.UTF8.GetByteCount(Html ?? "") + (RtfBase64?.Length ?? 0) > 2 * 1024 * 1024 || Note.Length > 100_000)
@@ -113,13 +114,14 @@ public sealed class WireRecord
         if (Kind == "image" && (!Guid.TryParse(BlobId, out _) || !Protocol.IsHash(BlobSha256 ?? ""))) throw new InvalidDataException("图片附件无效。");
         if (Kind == "files")
         {
-            if (Files.Count is < 1 or > 100 || Files.Sum(f => f.ByteLength) > Protocol.MaxBatchBytes) throw new InvalidDataException("文件数量或总大小超过限制。");
+            if (Files.Count is < 1 or > 100) throw new InvalidDataException("文件数量超过限制。");
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var file in Files)
             {
                 _ = Protocol.SafeName(file.Name, names);
                 if (file.ByteLength < 0 || file.ByteLength > Protocol.MaxFileBytes || !Guid.TryParse(file.BlobId, out _) || !Protocol.IsHash(file.Sha256)) throw new InvalidDataException("文件附件无效或超过限制。");
             }
+            if (Files.Sum(f => f.ByteLength) > Protocol.MaxBatchBytes) throw new InvalidDataException("文件总大小超过限制。");
         }
         if (!DateTimeOffset.TryParse(CapturedAt, out _) || !DateTimeOffset.TryParse(LastCapturedAt, out _) || ContentHash != Digest()) throw new InvalidDataException("内容校验失败。");
     }

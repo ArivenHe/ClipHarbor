@@ -15,7 +15,7 @@ public sealed class SyncStore(Database database)
     }
     public async Task<OperationsResponse> Apply(AuthSession session, OperationsRequest request)
     {
-        if (request.Operations.Count is < 1 or > 100) throw new ApiException(400, "INVALID_BATCH", "一次最多提交 100 个操作。");
+        if (request.Operations is null || request.Operations.Count is < 1 or > 100 || request.Operations.Any(op => op is null)) throw new ApiException(400, "INVALID_BATCH", "一次最多提交 100 个有效操作。");
         await using var connection = await database.Open();
         await using var transaction = await connection.BeginTransactionAsync();
         var state = await Database.LockAccount(connection, transaction, session.AccountId);

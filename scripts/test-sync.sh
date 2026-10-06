@@ -20,3 +20,4 @@ for _attempt in $(seq 1 60); do
   sleep 1
 done
 if ! dotnet run --project integration/ClipHarbor.IntegrationTests/ClipHarbor.IntegrationTests.csproj -c Release; then cat "$log_file"; exit 1; fi
+if ! python3 integration/test-native-bridge.py; then cat "$log_file"; exit 1; fi

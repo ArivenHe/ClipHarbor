@@ -59,7 +59,7 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var syncSpace: String?
     var syncRecordId: String?
     var syncContentHash: String?
-    var captures: Int { max(1, captureCount ?? 1) }
+    var captures: Int { max(0, captureCount ?? 1) }
     var uses: Int { max(0, useCount ?? 0) }
     // File-reference transport is preserved for copying, while browsing uses
     // the actual content type. This also reclassifies existing history.

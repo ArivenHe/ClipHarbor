@@ -15,6 +15,14 @@ internal sealed class DesktopBridge : IDisposable
     public nint PasteTarget { get; private set; }
     public event Action<string>? Command;
     public bool Paused { get; set; }
+    public string SyncStatus { get; private set; } = "";
+    public void SetSyncStatus(string value)
+    {
+        SyncStatus = value;
+        var tip = "拾贴 · " + value;
+        _tray.Tip = tip.Length > 120 ? tip[..120] : tip;
+        NativeMethods.Shell_NotifyIcon(1, ref _tray);
+    }
 
     public DesktopBridge(nint hwnd)
     {
@@ -70,6 +78,7 @@ internal sealed class DesktopBridge : IDisposable
         var menu = NativeMethods.CreatePopupMenu();
         try
         {
+            if (SyncStatus != "") NativeMethods.AppendMenu(menu, 2, 0, SyncStatus.Length > 70 ? SyncStatus[..70] : SyncStatus);
             NativeMethods.AppendMenu(menu, 0, 1, "打开历史");
             NativeMethods.AppendMenu(menu, 0, 2, Paused ? "恢复记录" : "暂停记录");
             NativeMethods.AppendMenu(menu, 0, 3, "设置");

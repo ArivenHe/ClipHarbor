@@ -38,7 +38,7 @@ public sealed class Authentication(Database database, IDataProtectionProvider pr
     private static string TokenHash(string value) => Protocol.Hash(Encoding.UTF8.GetBytes(value));
     public async Task<SessionTokens> Login(LoginRequest request)
     {
-        if (request.Username.Trim().Length is < 1 or > 100 || request.DeviceName.Length is < 1 or > 100 || !Guid.TryParse(request.DeviceId, out var device)) throw new ApiException(400, "LOGIN_INVALID", "账号或设备名称格式无效。");
+        if (request.Username is null || request.Password is null || request.DeviceName is null || request.Username.Trim().Length is < 1 or > 100 || request.DeviceName.Length is < 1 or > 100 || !Guid.TryParse(request.DeviceId, out var device)) throw new ApiException(400, "LOGIN_INVALID", "账号或设备名称格式无效。");
         await using var connection = await database.Open();
         Guid? account = null; string? password = null, username = null, epoch = null;
         await using (var command = Database.Command(connection, null, "SELECT id,password_hash,username,sync_epoch::text FROM accounts WHERE normalized_username=$1 AND enabled", request.Username.Trim().ToUpperInvariant()))

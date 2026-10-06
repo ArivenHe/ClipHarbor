@@ -8,6 +8,7 @@ final class ClipboardStore: ObservableObject {
     @Published var paused = false
     @Published var error: String?
     @Published var activeSyncSpace: String?
+    var captureSyncSpace: String?
     var captured: ((ClipItem, Int, Bool) -> Void)?
     var syncMutation: ((ClipItem, String) -> Void)?
     var visibleItems: [ClipItem] { items.filter { $0.syncSpace == nil || $0.syncSpace == activeSyncSpace } }
@@ -83,7 +84,7 @@ final class ClipboardStore: ObservableObject {
     }
     @discardableResult func add(_ newItem: ClipItem) -> ClipItem {
         var next = newItem
-        if let index = items.firstIndex(where: { ($0.syncSpace == nil || $0.syncSpace == activeSyncSpace) && $0.sameContent(as: next) }) {
+        if let index = items.firstIndex(where: { ($0.syncSpace == nil || $0.syncSpace == captureSyncSpace) && $0.sameContent(as: next) }) {
             next = items.remove(at: index)
             next.date = Date()
             if defaults.bool(forKey: "learningEnabled") { next.captureCount = next.captures + 1 }
