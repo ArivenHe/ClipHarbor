@@ -89,6 +89,8 @@ jobs:
           SERVER_SSH_KNOWN_HOSTS: ${{ secrets.SERVER_SSH_KNOWN_HOSTS }}
           SERVER_DEPLOY_DIR: ${{ vars.SERVER_DEPLOY_DIR || '/opt/clipharbor' }}
           SYNC_DOMAIN: ${{ vars.SYNC_DOMAIN }}
+          SYNC_PROXY_MODE: ${{ vars.SYNC_PROXY_MODE || 'standalone' }}
+          SYNC_PORT: ${{ vars.SYNC_PORT || '5890' }}
           SYNC_ADMIN_USERNAME: ${{ vars.SYNC_ADMIN_USERNAME || 'ariven' }}
           SYNC_ADMIN_PASSWORD: ${{ secrets.SYNC_ADMIN_PASSWORD }}
           SYNC_DATABASE_PASSWORD: ${{ secrets.SYNC_DATABASE_PASSWORD }}

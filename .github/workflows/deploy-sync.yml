@@ -1,0 +1,59 @@
+name: Deploy Sync Server
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Verified build run ID; leave empty to find the latest retained bundle
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sync-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select a tested server bundle
+        id: bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: python3 scripts/select-sync-bundle.py "$BUILD_RUN_ID"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipHarbor-server-bundle
+          path: bundle
+          run-id: ${{ steps.bundle.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify image bundle and apply current deployment configuration
+        env:
+          EXPECTED_COMMIT: ${{ steps.bundle.outputs.build_commit }}
+        run: |
+          (cd bundle && sha256sum -c SHA256SUMS.txt)
+          test "$(cat bundle/COMMIT)" = "$EXPECTED_COMMIT"
+          cp deploy/compose.yml deploy/Caddyfile scripts/deploy-server.sh bundle/
+          (cd bundle && sha256sum images.tar.gz compose.yml Caddyfile deploy-server.sh COMMIT > SHA256SUMS.txt)
+      - name: Install SSH password transport
+        run: sudo apt-get update -qq && sudo apt-get install -y sshpass
+      - name: Deploy via SSH username and password
+        env:
+          SERVER_SSH_HOST: ${{ secrets.SERVER_SSH_HOST }}
+          SERVER_SSH_PORT: ${{ vars.SERVER_SSH_PORT || '22' }}
+          SERVER_SSH_USER: ${{ secrets.SERVER_SSH_USER }}
+          SSHPASS: ${{ secrets.SERVER_SSH_PASSWORD }}
+          SERVER_SSH_KNOWN_HOSTS: ${{ secrets.SERVER_SSH_KNOWN_HOSTS }}
+          SERVER_DEPLOY_DIR: ${{ vars.SERVER_DEPLOY_DIR || '/opt/clipharbor' }}
+          SYNC_DOMAIN: ${{ vars.SYNC_DOMAIN }}
+          SYNC_PORT: ${{ vars.SYNC_PORT || '5890' }}
+          SYNC_PROXY_MODE: ${{ vars.SYNC_PROXY_MODE || 'standalone' }}
+          SYNC_ADMIN_USERNAME: ${{ vars.SYNC_ADMIN_USERNAME || 'ariven' }}
+          SYNC_ADMIN_PASSWORD: ${{ secrets.SYNC_ADMIN_PASSWORD }}
+          SYNC_DATABASE_PASSWORD: ${{ secrets.SYNC_DATABASE_PASSWORD }}
+          DEPLOY_COMMIT: ${{ steps.bundle.outputs.build_commit }}
+        run: bash scripts/ci-ssh-deploy.sh

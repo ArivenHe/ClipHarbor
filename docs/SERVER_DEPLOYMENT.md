@@ -4,7 +4,7 @@
 
 ## 服务器准备
 
-需要 Linux、Docker Engine、Compose v2、Python 3 和 curl。SSH 账号必须可以操作 Docker，并能写入部署目录，默认 `/opt/clipharbor`。域名 A / AAAA 记录指向服务器，80 / 443 端口可供 Caddy 使用；有现成反向代理占用这些端口时，需要先调整入口配置。
+需要 Linux、Docker Engine、Compose v2、Python 3 和 curl。SSH 账号必须可以操作 Docker，并能写入部署目录，默认 `/opt/clipharbor`。域名 A / AAAA 记录指向服务器。独立入口模式使用 Caddy 的 80 / 443；已有宝塔 / Nginx 入口时，使用 `external` 模式，只在本机 `127.0.0.1:5890` 启动后台，再配置原有入口反向代理。
 
 第一次部署前创建目录并授予 SSH 账号权限。不要在正在使用的其他应用目录执行部署。
 
@@ -29,6 +29,8 @@
 | `SERVER_SSH_PORT` | 默认 `22` |
 | `SERVER_DEPLOY_DIR` | 默认 `/opt/clipharbor` |
 | `SERVER_PLATFORM` | 默认 `linux/amd64`；ARM 服务器填 `linux/arm64` |
+| `SYNC_PORT` | 默认 `5890`；后台 HTTP 仅绑定 `127.0.0.1` |
+| `SYNC_PROXY_MODE` | 默认 `standalone`；宝塔 / 已有 Nginx 使用 `external`，关闭独立 Caddy 入口 |
 
 `SERVER_SSH_KNOWN_HOSTS` 必须来自可信渠道：可以复用已经验证的本机 `~/.ssh/known_hosts` 条目；或从服务器控制台读取 `/etc/ssh/ssh_host_ed25519_key.pub`，核实指纹后构造条目。默认端口格式为 `host ssh-ed25519 公钥`，非默认端口为 `[host]:port ssh-ed25519 公钥`。流程强制校验主机身份，不会关闭 `StrictHostKeyChecking`。
 
@@ -42,7 +44,15 @@
 2. PostgreSQL 上的真实 API、WebSocket、附件续传和两客户端同步集成测试。
 3. 所有测试和客户端构建通过后生成 `ClipHarbor-server-bundle`。
 4. 启用部署时，密码登录 SSH，检查提交号及包校验，加载镜像并启动。
-5. HTTPS `/healthz` 必须返回本次 Git 提交号，才更新 `current` 指针。失败会启动上一套镜像和配置，保留数据卷。
+5. 独立入口验证 HTTPS `/healthz`；`external` 模式验证本机后台 `/healthz`。必须返回镜像构建提交号才更新 `current` 指针。失败会启动上一套镜像和配置，保留数据卷。
+
+只部署服务端或重试部署时，运行 **Deploy Sync Server**，可填写已经验证的构建 run ID，留空则选择最近保留的合格镜像包。它检查 macOS、Windows 两个架构、服务端和镜像打包均已通过，复用镜像，应用当前部署配置，不重建客户端。部署目录包含配置摘要，同一份镜像改变端口时也保留上一套配置以便回滚。
+
+### 宝塔反向代理
+
+仓库 Variables 设置 `SYNC_PROXY_MODE=external`、`SYNC_PORT=5890`。在宝塔为同步域名添加反向代理，目标填 **`http://127.0.0.1:5890`**，开启 WebSocket 支持，并为该域名配置有效的 HTTPS 证书。允许至少 16 MiB 请求体，以便上传分块及带格式文本；反向代理超时建议 300 秒。
+
+客户端仍填写 `https://同步域名`。5890 是本机 HTTP 后台端口，无需开放给公网。`external` 部署完成只证明后台可用，域名、证书和 WebSocket 转发应在配置宝塔后单独验收。
 
 尚未填写服务器信息时，构建和服务端包仍会生成，生产部署跳过。客户端安装包包含所需运行时；Mac 的同步组件位于应用包 `Contents/Helpers/Sync`，不要单独移动或删除。
 
@@ -54,8 +64,8 @@ Mac 的同步组件将托管程序集打包进单个可执行文件，只在旁�
 
 ```text
 /opt/clipharbor/
-  current -> releases/<提交号>
-  releases/<提交号>/
+  current -> releases/<提交号>-<配置摘要>
+  releases/<提交号>-<配置摘要>/
     compose.yml, Caddyfile, runtime.env, COMMIT, SHA256SUMS.txt
     images.tar.gz, deploy-server.sh
   secrets/
