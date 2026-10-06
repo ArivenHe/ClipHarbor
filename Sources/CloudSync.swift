@@ -124,7 +124,7 @@ final class CloudSync: ObservableObject {
     private func read(_ bytes: Data) {
         guard !bytes.isEmpty else { return }
         buffer.append(bytes)
-        guard buffer.count <= 8 * 1024 * 1024 else { process?.terminate(); return }
+        guard buffer.count <= 16 * 1024 * 1024 else { process?.terminate(); return }
         while let index = buffer.firstIndex(of: 10) {
             let line = buffer.prefix(upTo: index); buffer.removeSubrange(...index)
             guard let message = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }

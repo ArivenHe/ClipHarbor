@@ -64,7 +64,7 @@ sealed class NativeBridge
         {
             while (await Console.In.ReadLineAsync(life.Token) is { } line)
             {
-                if (line.Length > 4 * 1024 * 1024) throw new InvalidDataException("Native message exceeds limit.");
+                if (line.Length > 16 * 1024 * 1024) throw new InvalidDataException("Native message exceeds limit.");
                 using var json = JsonDocument.Parse(line); var message = json.RootElement.Clone();
                 if (message.TryGetProperty("callId", out var call))
                 {

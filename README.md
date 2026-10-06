@@ -119,8 +119,8 @@ bash scripts/build.sh
 推送 `v*` 标签：所有平台构建成功后自动创建 GitHub Release。
 
 ```bash
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 默认产物使用 ad-hoc 签名，没有 Apple 公证，适合开发和自用；下载后可能被 Gatekeeper 拦截。正式独立分发需 Apple Developer Program，并设置仓库 Actions Secrets：

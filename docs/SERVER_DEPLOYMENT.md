@@ -46,7 +46,7 @@
 
 尚未填写服务器信息时，构建和服务端包仍会生成，生产部署跳过。客户端安装包包含所需运行时；Mac 的同步组件位于应用包 `Contents/Helpers/Sync`，不要单独移动或删除。
 
-Mac 打包会分别签名两种架构的组件及原生库，为组件保留 JIT 权限，再签名外层应用；流程参考 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos)。
+Mac 的同步组件将托管程序集打包进单个可执行文件，只在旁边保留原生库，避免把普通 DLL / JSON 放进系统要求存放签名代码的 `Helpers` 目录。打包会分别签名两种架构的组件及原生库，为组件保留 JIT 权限，再签名外层应用；流程参考 [.NET macOS 发布说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/macos) 和 [Apple 签名目录说明](https://developer.apple.com/library/archive/technotes/tn2206/)。
 
 成功后，两端打开设置 → 同步，服务器填 `https://你的同步域名`，使用初始同步账号登录，保留“跨设备直接粘贴”开启。Mac 复制 → Windows `Ctrl+V`；Windows 复制 → Mac `⌘V`。文件要在完整下载后粘贴，正常 Finder / 资源管理器接收文件副本。
 

@@ -8,7 +8,8 @@ xcodebuild -project ClipHarbor.xcodeproj -scheme ClipHarbor -configuration Relea
 APP=build/Build/Products/Release/ClipHarbor.app
 for architecture in arm64 x64; do
   dotnet publish shared/ClipHarbor.SyncHost/ClipHarbor.SyncHost.csproj -c Release \
-    -r "osx-$architecture" --self-contained true -p:PublishSingleFile=false \
+    -r "osx-$architecture" --self-contained true -p:PublishSingleFile=true \
+    -p:DebugType=None -p:DebugSymbols=false \
     -o "$APP/Contents/Helpers/Sync/$architecture"
 done
 identity=${SIGNING_IDENTITY:--}
@@ -29,6 +30,8 @@ else
   codesign --force --sign - "$APP"
 fi
 codesign --verify --deep --strict "$APP"
+case "$(uname -m)" in arm64) native_architecture=arm64;; x86_64) native_architecture=x64;; *) exit 1;; esac
+python3 integration/test-packaged-host.py "$APP/Contents/Helpers/Sync/$native_architecture/ClipHarbor.SyncHost"
 mkdir -p build/dist
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" build/dist/ClipHarbor.zip
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
