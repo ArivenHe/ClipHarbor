@@ -19,8 +19,8 @@ final class ShortcutTests: XCTestCase {
         }
     }
     func testFileTypeActionsTargetCorrectFilters() {
-        XCTAssertEqual(ShortcutAction.imageFile.filter?.kind, "files")
-        XCTAssertEqual(ShortcutAction.imageFile.filter?.category, "image")
+        XCTAssertEqual(ShortcutAction.imageFile.filter?.kind, "image")
+        XCTAssertEqual(ShortcutAction.imageFile.filter?.category, "all")
         XCTAssertEqual(ShortcutAction.image.filter?.kind, "image")
         XCTAssertTrue(ShortcutAction.panel.global)
         XCTAssertFalse(ShortcutAction.delete.global)

@@ -83,7 +83,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .all: ("all", "all"); case .favorites: ("favorites", "all"); case .text: ("text", "all")
         case .link: ("link", "all"); case .image: ("image", "all"); case .files: ("files", "all")
         case .document, .spreadsheet, .presentation, .audio, .video, .archive, .code, .folder, .other: ("files", rawValue)
-        case .imageFile: ("files", "image")
+        case .imageFile: ("image", "all")
         default: nil
         }
     }
@@ -174,6 +174,11 @@ final class ShortcutManager: ObservableObject {
         if let action = ShortcutAction.allCases.first(where: { $0.applicationWide && combinations[$0.rawValue]?.matches(event) == true }) {
             globalHandler?(action); return nil
         }
+        // Ordinary navigation belongs to the focused view, independently of
+        // saved shortcuts. In particular, Enter must not steal button presses
+        // or commit a note by copying the selected record.
+        if event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+           [UInt16(36), 48, 49, 53, 76, 123, 124, 125, 126, 115, 119, 116, 121].contains(event.keyCode) { return event }
         // Leave settings controls and standard text editing to AppKit.
         guard NSApp.keyWindow?.identifier?.rawValue == "ClipHarbor.history", let window = NSApp.keyWindow else { return event }
         guard let action = ShortcutAction.allCases.first(where: { !$0.global && !$0.applicationWide && combinations[$0.rawValue]?.matches(event) == true }) else { return event }
@@ -244,14 +249,14 @@ struct ShortcutSettingsView: View {
                         HStack {
                             Text(action.title)
                             Spacer()
-                            Button(manager.recording == action ? "按下快捷键…" : manager.label(action)) { manager.recording = manager.recording == action ? nil : action }
+                            KeyboardButton(manager.recording == action ? "按下快捷键…" : manager.label(action)) { manager.recording = manager.recording == action ? nil : action }
                                 .monospaced().frame(minWidth: 105)
-                            Button { _ = manager.set(nil, for: action); manager.recording = nil } label: { Image(systemName: "xmark.circle") }.help("清除快捷键")
+                            KeyboardButton { _ = manager.set(nil, for: action); manager.recording = nil } label: { Image(systemName: "xmark.circle") }.help("清除快捷键")
                         }
                     }
                 }
             }
-            Section { Button("恢复默认快捷键") { reset = true } }
+            Section { KeyboardButton("恢复默认快捷键") { reset = true } }
         }.formStyle(.grouped)
         .onDisappear { manager.recording = nil }
         .alert("快捷键无法保存", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.error = nil } })) {

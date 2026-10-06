@@ -57,6 +57,12 @@ struct ClipItem: Identifiable, Codable, Equatable {
     var excludedFromLearning: Bool?
     var captures: Int { max(1, captureCount ?? 1) }
     var uses: Int { max(0, useCount ?? 0) }
+    // File-reference transport is preserved for copying, while browsing uses
+    // the actual content type. This also reclassifies existing history.
+    var displayKind: ClipKind {
+        if kind == .files, !fileURLs.isEmpty, fileURLs.allSatisfy({ FileCategory.classify($0) == .image }) { return .image }
+        return kind
+    }
     var title: String {
         if kind == .files { return fileURLs.map(\.lastPathComponent).joined(separator: "、") }
         if kind == .image { return screenshotURL?.lastPathComponent ?? "图片" }

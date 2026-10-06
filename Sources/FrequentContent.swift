@@ -24,7 +24,7 @@ struct FrequentContent {
     static func summary(_ items: [ClipItem], threshold: Int) -> String {
         let frequent = ranked(items, threshold: threshold)
         guard !frequent.isEmpty else { return "继续复制和使用内容，拾贴会在本机整理你的常用项。" }
-        let groups = Dictionary(grouping: frequent, by: \.kind)
+        let groups = Dictionary(grouping: frequent, by: \.displayKind)
         return "已整理 \(frequent.count) 个常用项：" + ClipKind.allCases.compactMap { kind in
             groups[kind].map { "\(kind.title) \($0.count) 个" }
         }.joined(separator: "、") + "。排序综合重复复制与使用次数。"

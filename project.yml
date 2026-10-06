@@ -19,8 +19,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.arivenhe.ClipHarbor
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: 拾贴
-        MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_KEY_LSUIElement: YES
+        MARKETING_VERSION: 0.1.1
+        CURRENT_PROJECT_VERSION: 2
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
   ClipHarborTests:

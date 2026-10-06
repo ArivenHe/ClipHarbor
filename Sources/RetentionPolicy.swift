@@ -30,7 +30,7 @@ struct RetentionPolicy {
         var count = 0
         return items.filter { item in
             if item.favorite && exempt { return true }
-            if let duration = lifetime(for: item.kind, defaults: defaults), now.timeIntervalSince(item.date) >= duration { return false }
+            if let duration = lifetime(for: item.displayKind, defaults: defaults), now.timeIntervalSince(item.date) >= duration { return false }
             // Expired records must not consume the capacity of remaining records.
             count += 1
             return count <= limit

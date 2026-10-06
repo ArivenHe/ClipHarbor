@@ -61,6 +61,17 @@ final class RetentionPolicyTests: XCTestCase {
             XCTAssertEqual(RetentionPolicy.lifetime(for: .link, defaults: defaults), 7200)
         }
     }
+    func testImageFileReferencesFollowImageRetention() {
+        withDefaults { defaults in
+            defaults.set(true, forKey: "retention.image.override")
+            defaults.set("minutes", forKey: "retention.image.unit")
+            defaults.set(1, forKey: "retention.image.value")
+            let now = Date(timeIntervalSince1970: 10000)
+            let image = ClipItem(date: now.addingTimeInterval(-61), kind: .files, fileURLs: [URL(fileURLWithPath: "/missing/2.png")])
+            let document = ClipItem(date: image.date, kind: .files, fileURLs: [URL(fileURLWithPath: "/missing/report.pdf")])
+            XCTAssertEqual(RetentionPolicy.keeping([image, document], defaults: defaults, now: now).map(\.id), [document.id])
+        }
+    }
     func testLegacyMigrationIsIdempotent() {
         withDefaults { defaults in
             defaults.removeObject(forKey: "retention.unit")

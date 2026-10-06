@@ -44,8 +44,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel?
     private var historyWindow: NSWindow?
     private var previousApp: NSRunningApplication?
+    private var workspaceObserver: NSObjectProtocol?
     private var settingsWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            let processID = app.processIdentifier
+            Task { @MainActor in
+                guard processID != ProcessInfo.processInfo.processIdentifier else { return }
+                self?.previousApp = NSRunningApplication(processIdentifier: processID)
+            }
+        }
         ShortcutManager.shared.globalHandler = { [weak self] action in self?.perform(action) }
         ShortcutManager.shared.start()
         screenshotMonitor.start()
