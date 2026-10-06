@@ -13,6 +13,7 @@ public sealed class EventHub(SyncStore store, Authentication authentication)
     {
         if (_listeners.TryGetValue(account, out var listeners)) foreach (var channel in listeners.Values) channel.Writer.TryWrite(notice);
     }
+    public void Revalidate(Guid account) => Notify(account, new("revalidate", "0", ""));
     public async Task Connect(HttpContext context, AuthSession session)
     {
         if (!context.WebSockets.IsWebSocketRequest) throw new ApiException(400, "WEBSOCKET_REQUIRED", "需要 WebSocket 连接。");
@@ -36,7 +37,17 @@ public sealed class EventHub(SyncStore store, Authentication authentication)
             while (!lifetime.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
                 using var interval = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); interval.CancelAfter(TimeSpan.FromSeconds(10));
-                try { await Send(await channel.Reader.ReadAsync(interval.Token)); }
+                try
+                {
+                    var notice = await channel.Reader.ReadAsync(interval.Token);
+                    if (!await authentication.Valid(session)) break;
+                    if (notice.Type == "revalidate")
+                    {
+                        latest = await store.Latest(session);
+                        notice = new("heartbeat", latest.ClipboardSequence, latest.SyncEpoch);
+                    }
+                    await Send(notice);
+                }
                 catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
                 {
                     if (!await authentication.Valid(session)) break;

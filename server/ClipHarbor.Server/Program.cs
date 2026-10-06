@@ -7,7 +7,7 @@ using Microsoft.Net.Http.Headers;
 using Npgsql;
 using System.Threading.RateLimiting;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot") });
 // Rich JSON can expand control characters sixfold; each multipart block still has its own 4 MiB limit.
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 16 * 1024 * 1024);
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
@@ -30,12 +30,15 @@ if (string.IsNullOrEmpty(connectionString)) connectionString = new NpgsqlConnect
 builder.Services.AddSingleton(new Database(connectionString));
 builder.Services.AddDataProtection().SetApplicationName("ClipHarbor.Sync").PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
 builder.Services.AddSingleton<Authentication>(); builder.Services.AddSingleton<SyncStore>(); builder.Services.AddSingleton<EventHub>();
+builder.Services.AddSingleton<AdminAuthentication>(); builder.Services.AddSingleton<AdminStore>();
 builder.Services.AddSingleton(provider => new Attachments(provider.GetRequiredService<Database>(), dataDirectory));
 builder.Services.AddHostedService(provider => new Maintenance(provider.GetRequiredService<Database>(), provider.GetRequiredService<EventHub>(), dataDirectory, provider.GetRequiredService<ILogger<Maintenance>>()));
 builder.Services.ConfigureHttpJsonOptions(options => { options.SerializerOptions.PropertyNamingPolicy = Protocol.Json.PropertyNamingPolicy; options.SerializerOptions.DefaultIgnoreCondition = Protocol.Json.DefaultIgnoreCondition; });
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new() { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    var loginLimit = int.Parse(Environment.GetEnvironmentVariable("CLIPHARBOR_LOGIN_RATE_LIMIT") ?? "10");
+    if (loginLimit is < 1 or > 1000) throw new InvalidOperationException("登录限流配置需在 1–1000 之间。");
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new() { PermitLimit = loginLimit, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.RejectionStatusCode = 429;
 });
 var app = builder.Build();
@@ -47,7 +50,7 @@ if (Environment.GetEnvironmentVariable("CLIPHARBOR_TRUST_PROXY") == "true")
 }
 var database = app.Services.GetRequiredService<Database>(); await database.Initialize();
 var auth = app.Services.GetRequiredService<Authentication>();
-var accountCommand = Array.FindIndex(args, a => a is "--create-account" or "--reset-password" or "--disable-account" or "--reset-epoch");
+var accountCommand = Array.FindIndex(args, a => a is "--create-account" or "--create-admin" or "--reset-password" or "--disable-account" or "--reset-epoch");
 if (accountCommand >= 0)
 {
     if (accountCommand + 1 >= args.Length) throw new InvalidDataException("需要账号名称。");
@@ -62,17 +65,13 @@ if (accountCommand >= 0)
     {
         var passwordIndex = Array.IndexOf(args, "--password-file");
         if (passwordIndex < 0 || passwordIndex + 1 >= args.Length) throw new InvalidDataException("需要 --password-file；不接受命令行明文密码。");
-        await auth.SetAccount(username, (await File.ReadAllTextAsync(args[passwordIndex + 1])).TrimEnd('\r', '\n'), args[accountCommand] == "--reset-password");
+        await auth.SetAccount(username, (await File.ReadAllTextAsync(args[passwordIndex + 1])).TrimEnd('\r', '\n'), args[accountCommand] == "--reset-password", args[accountCommand] == "--create-admin");
     }
     Console.WriteLine("账号操作已完成。"); return;
 }
 var admin = Environment.GetEnvironmentVariable("CLIPHARBOR_ADMIN_USERNAME");
 var adminPassword = Secret("CLIPHARBOR_ADMIN_PASSWORD");
-if (!string.IsNullOrEmpty(admin) && !string.IsNullOrEmpty(adminPassword))
-{
-    await using var connection = await database.Open();
-    if ((long)(await Database.Scalar(connection, null, "SELECT count(*) FROM accounts"))! == 0) await auth.SetAccount(admin, adminPassword);
-}
+if (!string.IsNullOrEmpty(admin)) await app.Services.GetRequiredService<AdminStore>().EnsureAdministrator(admin, adminPassword);
 var instanceId = await database.InstanceId();
 var pathBase = Environment.GetEnvironmentVariable("CLIPHARBOR_PATH_BASE");
 if (!string.IsNullOrEmpty(pathBase)) app.UsePathBase(pathBase.TrimEnd('/'));
@@ -80,6 +79,9 @@ app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers.CacheControl = "no-store";
+    context.Response.Headers["Referrer-Policy"] = "same-origin";
+    if (context.Request.Path.StartsWithSegments("/admin"))
+        context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
     try { await next(context); }
     catch (Exception error) when (!context.Response.HasStarted)
     {
@@ -90,6 +92,8 @@ app.Use(async (context, next) =>
     }
 });
 app.UseRateLimiter(); app.UseWebSockets(new() { KeepAliveInterval = TimeSpan.FromSeconds(15) });
+app.UseStaticFiles();
+app.MapAdmin();
 app.MapGet("/healthz", async () => { await using var connection = await database.Open(); await Database.Scalar(connection, null, "SELECT 1"); return Results.Ok(new { status = "ok", instanceId, commit = Environment.GetEnvironmentVariable("CLIPHARBOR_BUILD_COMMIT") ?? "development" }); });
 app.MapGet("/api/v1/meta", () => new ServerMeta("ClipHarbor.Sync", instanceId, Protocol.Version, Protocol.PartBytes, Protocol.MaxFileBytes, Protocol.MaxImageBytes, Protocol.MaxBatchBytes, Protocol.QuotaBytes));
 app.MapPost("/api/v1/auth/login", async (LoginRequest request) => await auth.Login(request)).RequireRateLimiting("login");
@@ -103,7 +107,7 @@ app.MapPost("/api/v1/auth/logout", async (LogoutRequest request, HttpContext con
 app.MapGet("/api/v1/account", async (HttpContext context) =>
 {
     var session = await auth.Require(context); await using var connection = await database.Open();
-    var used = Convert.ToInt64(await Database.Scalar(connection, null, "SELECT coalesce(sum(byte_length),0)::bigint FROM uploads WHERE account_id=$1", session.AccountId));
+    var used = Convert.ToInt64(await Database.Scalar(connection, null, "SELECT ((SELECT coalesce(sum(byte_length),0) FROM uploads WHERE account_id=$1)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE account_id=$1 AND NOT deleted))::bigint", session.AccountId));
     return Results.Ok(new { accountId = session.AccountId, username = session.Username, syncEpoch = session.Epoch, quotaBytes = Protocol.QuotaBytes, usedBytes = used });
 });
 app.MapGet("/api/v1/devices", async (HttpContext context) =>

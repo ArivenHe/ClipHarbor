@@ -18,14 +18,14 @@
 | `SERVER_SSH_USER` | SSH 用户名 |
 | `SERVER_SSH_PASSWORD` | SSH 登录密码 |
 | `SERVER_SSH_KNOWN_HOSTS` | 已核实的 SSH 主机公钥，使用 OpenSSH known_hosts 格式 |
-| `SYNC_ADMIN_PASSWORD` | 初始同步账号密码，独立于 SSH 密码 |
+| `SYNC_ADMIN_PASSWORD` | 初始管理员密码，同时用于此账号的客户端同步，独立于 SSH 密码 |
 | `SYNC_DATABASE_PASSWORD` | PostgreSQL 初始密码，独立于上面两个密码 |
 
 | Variable | 默认值 / 内容 |
 | --- | --- |
 | `DEPLOY_ENABLED` | 设置为 `true` 后启用生产部署 |
 | `SYNC_DOMAIN` | 必填，例如 `sync.example.com`，不带协议、端口和路径 |
-| `SYNC_ADMIN_USERNAME` | 默认 `ariven`，客户端登录使用这个账号 |
+| `SYNC_ADMIN_USERNAME` | 默认 `ariven`，初始管理员账号；可登录管理后台和自己的同步设备 |
 | `SERVER_SSH_PORT` | 默认 `22` |
 | `SERVER_DEPLOY_DIR` | 默认 `/opt/clipharbor` |
 | `SERVER_PLATFORM` | 默认 `linux/amd64`；ARM 服务器填 `linux/arm64` |
@@ -62,6 +62,21 @@ Mac 的同步组件将托管程序集打包进单个可执行文件，只在旁�
 
 ## 目录及运维
 
+### 用户管理后台
+
+打开 **`https://你的同步域名/admin/`**，用 `SYNC_ADMIN_USERNAME` 指定的账号与原有密码登录。后台随服务端镜像部署，使用相同域名和反向代理，不需要额外端口或前端服务。若配置 `CLIPHARBOR_PATH_BASE=/clipboard`，入口对应 `/clipboard/admin/`。
+
+- **新建用户**：填写用户名和至少 8 个字符的密码，默认普通用户。每位用户在自己的 Mac / Windows 设备使用同一个账号登录应用的「设置 → 同步」。不同用户不能共享账号。
+- **用户与同步**：搜索 / 筛选用户，查看记录数量、正文与附件用量、设备数量和最近活动。每用户默认 2 GiB，后台不展示剪贴板正文或附件内容。
+- **管理用户**：启用 / 禁用、授予 / 取消管理员权限、重置密码，或退出某台设备 / 全部同步设备。禁用与重置密码会撤销该账号的同步和后台会话，已有数据保留。重新启用不会恢复旧会话。
+- **操作记录**：查看最近 100 次管理操作的操作者、目标账号和时间，不记录密码。
+
+普通用户不能登录后台；客户端的 Bearer 令牌也不能代替后台会话。后台使用独立的 HttpOnly / SameSite Cookie（HTTPS 下带 Secure 标记）、8 小时会话、CSRF 校验和登录限流。不能在后台禁用自己或移除自己的管理员权限，至少保留一位启用的管理员。
+
+从旧版本升级时，数据库自动进行追加式迁移，保留已有账号与同步数据。仅当没有管理员时，启动过程把 `SYNC_ADMIN_USERNAME` 对应的现有账号提升为管理员，密码保持原值；不会把其他普通账号自动提升。配置中的账号不存在且数据库已有用户时，启动会明确失败，应填写正确的已有账号，或用下面的 `--create-admin` 命令创建管理员。首次空数据库仍使用初始管理员用户名与密码创建账号。
+
+同一设备切换账号时，原账号的本地同步队列与缓存留在原空间，不会上传给新账号。应用中的本机历史仍保留；主动选择「导入收藏 / 全部历史」会把未归属同步空间的本机内容导入当前账号。
+
 ```text
 /opt/clipharbor/
   current -> releases/<提交号>-<配置摘要>
@@ -92,6 +107,7 @@ docker compose --env-file runtime.env -f compose.yml cp /安全位置/password.t
 docker compose --env-file runtime.env -f compose.yml exec server \
   dotnet ClipHarbor.Server.dll --create-account 用户名 --password-file /tmp/account-password
 # 重置已有账号时将 --create-account 换成 --reset-password。
+# 创建额外管理员时将 --create-account 换成 --create-admin。
 docker compose --env-file runtime.env -f compose.yml exec server rm /tmp/account-password
 ```
 
@@ -106,5 +122,7 @@ docker compose --env-file runtime.env -f compose.yml exec server rm /tmp/account
 ## 开发验证
 
 安装 .NET 10 SDK，连接独立测试 PostgreSQL，设置 `CLIPHARBOR_DATABASE` 和 `CLIPHARBOR_DATA_DIR`，运行 `bash scripts/test-sync.sh`。脚本创建 `alice` / `bob` 测试账号，仅用于独立测试库，不能在生产数据库运行。
+
+脚本同时创建 `consoleadmin` 测试管理员，验证后台身份与 CSRF、创建 / 启停用户、密码重置、角色变更、指定设备 / 全设备撤销，以及跨账号访问拒绝。测试服务将登录限流临时设为每 IP 每分钟 200 次以运行完整场景；生产默认每分钟 10 次，可通过 `CLIPHARBOR_LOGIN_RATE_LIMIT` 调整（1–1000）。
 
 自动化验证不能替代实际 Windows / Mac 的 Finder、资源管理器、富文本和目标应用粘贴验收。上线后需要在两台真实设备进行双向验收。

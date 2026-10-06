@@ -12,7 +12,8 @@ chmod 600 "$password_file"
 server=server/ClipHarbor.Server/bin/Release/net10.0/ClipHarbor.Server.dll
 dotnet "$server" --create-account alice --password-file "$password_file"
 dotnet "$server" --create-account bob --password-file "$password_file"
-ASPNETCORE_URLS="${CLIPHARBOR_TEST_URL:-http://localhost:28080}" dotnet "$server" > "$log_file" 2>&1 &
+dotnet "$server" --create-admin consoleadmin --password-file "$password_file"
+CLIPHARBOR_LOGIN_RATE_LIMIT=200 ASPNETCORE_URLS="${CLIPHARBOR_TEST_URL:-http://localhost:28080}" dotnet "$server" > "$log_file" 2>&1 &
 server_pid=$!
 for _attempt in $(seq 1 60); do
   if curl --fail --silent "${CLIPHARBOR_TEST_URL:-http://localhost:28080}/healthz" >/dev/null; then break; fi
@@ -21,3 +22,4 @@ for _attempt in $(seq 1 60); do
 done
 if ! dotnet run --project integration/ClipHarbor.IntegrationTests/ClipHarbor.IntegrationTests.csproj -c Release; then cat "$log_file"; exit 1; fi
 if ! python3 integration/test-native-bridge.py; then cat "$log_file"; exit 1; fi
+if ! python3 integration/test-admin.py; then cat "$log_file"; exit 1; fi

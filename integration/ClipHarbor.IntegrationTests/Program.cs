@@ -58,10 +58,30 @@ try
     Check(note.Status == "accepted" && note.Record!.Favorite, "per-field concurrency");
     Check((await Apply(a, new(Guid.NewGuid().ToString(), "note", created.RecordId, Note: "stale", ExpectedRevision: created.NoteRevision))).Status == "conflict", "same-field conflict");
     Check((await outsider.Get<ChangesResponse>("sync/changes?cursor=0")).Records.Count == 0, "account history isolated");
+    Check((await outsider.Get<SnapshotResponse>("sync/snapshot")).Records.Count == 0, "account snapshot isolated");
+    using var isolatedApi = new SyncApi(url, outsider.Session);
+    using var ownerApi = new SyncApi(url, a.Session);
+    await using var otherSpace = new SyncEngine(isolatedApi, new SyncConfig(), Path.Combine(root, "outsider-space"), (await outsider.Test()).InstanceId);
+    await using var ownerSpace = new SyncEngine(ownerApi, new SyncConfig(), Path.Combine(root, "owner-space"), (await a.Test()).InstanceId);
+    Check(otherSpace.Space != ownerSpace.Space, "local sync caches are account scoped");
     await Expect(() => outsider.Post<ClipboardLatest>("clipboard/events", new ClipboardPublish(Guid.NewGuid().ToString(), created.RecordId, outsider.Session!.SyncEpoch)), 404);
     var eventId = Guid.NewGuid().ToString(); var latest = await a.Post<ClipboardLatest>("clipboard/events", new ClipboardPublish(eventId, created.RecordId, a.Session!.SyncEpoch));
     Check((await a.Post<ClipboardLatest>("clipboard/events", new ClipboardPublish(eventId, created.RecordId, a.Session.SyncEpoch))).ClipboardSequence == latest.ClipboardSequence, "clipboard event idempotency");
     Check((await b.Get<ClipboardLatest>("clipboard/latest")).Event!.OriginDeviceId == a.Session.DeviceId, "clipboard origin identity");
+    Check((await outsider.Get<ClipboardLatest>("clipboard/latest")).Event is null, "latest clipboard isolated");
+    var stolen = await Apply(outsider, new(Guid.NewGuid().ToString(), "note", created.RecordId, Note: "foreign", ExpectedRevision: created.NoteRevision));
+    Check(stolen.Status == "rejected" && stolen.Code == "RECORD_NOT_FOUND", "foreign account cannot mutate record by ID");
+    using (var isolatedSocket = new ClientWebSocket())
+    {
+        isolatedSocket.Options.SetRequestHeader("Authorization", "Bearer " + outsider.Session!.AccessToken);
+        var wsUri = new UriBuilder(new Uri(url, "api/v1/events")) { Scheme = url.Scheme == "https" ? "wss" : "ws" };
+        await isolatedSocket.ConnectAsync(wsUri.Uri, default);
+        var buffer = new byte[2048]; await isolatedSocket.ReceiveAsync(buffer, default);
+        await a.Post<ClipboardLatest>("clipboard/events", new ClipboardPublish(Guid.NewGuid().ToString(), created.RecordId, a.Session.SyncEpoch));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try { await isolatedSocket.ReceiveAsync(buffer, timeout.Token); throw new Exception("foreign clipboard notification leaked"); }
+        catch (OperationCanceledException) { assertions++; }
+    }
 
     var bytes = new byte[Protocol.PartBytes + 31]; new Random(7).NextBytes(bytes); var hash = Protocol.Hash(bytes); var upload = await a.Post<UploadResponse>("uploads", new UploadRequest("file", bytes.Length, hash));
     await Expect(() => outsider.Get<UploadResponse>("uploads/" + upload.UploadId), 404);

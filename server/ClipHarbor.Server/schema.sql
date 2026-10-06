@@ -54,3 +54,18 @@ CREATE TABLE IF NOT EXISTS snapshots (
     id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES accounts(id), cursor bigint NOT NULL,
     epoch uuid NOT NULL, records jsonb NOT NULL, expires_at timestamptz NOT NULL DEFAULT now()+interval '1 hour'
 );
+-- Additive migration: existing accounts and all account-scoped sync data stay in place.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES accounts(id),
+    token_hash text UNIQUE NOT NULL, csrf_token text NOT NULL,
+    expires_at timestamptz NOT NULL, revoked boolean NOT NULL DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS admin_audit (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    actor_id uuid NOT NULL REFERENCES accounts(id), target_id uuid NOT NULL REFERENCES accounts(id),
+    action text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sessions_account_device ON sessions(account_id,device_id);
+UPDATE instance SET schema_version=2 WHERE schema_version=1;

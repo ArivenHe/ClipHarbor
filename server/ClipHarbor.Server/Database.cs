@@ -33,7 +33,7 @@ public sealed class Database(string connectionString)
         await Execute(connection, transaction, "SELECT pg_advisory_xact_lock(572194136)");
         await Execute(connection, transaction, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "schema.sql")));
         var version = Convert.ToInt32(await Scalar(connection, transaction, "SELECT schema_version FROM instance WHERE singleton"));
-        if (version != 1) throw new InvalidOperationException("数据库版本不兼容。");
+        if (version != 2) throw new InvalidOperationException("数据库版本不兼容。");
         await transaction.CommitAsync();
     }
     public async Task<string> InstanceId()
