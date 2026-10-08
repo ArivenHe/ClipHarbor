@@ -124,7 +124,7 @@ internal sealed class ClipboardService : IDisposable
         }
         catch (Exception e) { Error?.Invoke("保存截图失败：" + e.Message); }
     }
-    public async Task CopyAsync(ClipRecord item, bool plain = false, bool remote = false, long? expectedVersion = null)
+    public async Task CopyAsync(ClipRecord item, bool plain = false, bool remote = false, long? expectedVersion = null, bool trackUsage = true)
     {
         if (expectedVersion is long expected && Version != expected) throw new InvalidOperationException("本机已复制新内容，保留当前剪贴板。");
         var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
@@ -161,7 +161,7 @@ internal sealed class ClipboardService : IDisposable
         _lastSequence = NativeMethods.GetClipboardSequenceNumber();
         if (!remote)
         {
-            await _store.RecordUseAsync(item);
+            if (trackUsage) await _store.RecordUseAsync(item);
             if ((plain || _store.Settings.PlainText) && item.Kind is ClipKind.Text or ClipKind.Link)
                 Copied?.Invoke(new ClipRecord { Kind = item.Kind, Text = item.Text }, _lastSequence);
             else Copied?.Invoke(item, _lastSequence);

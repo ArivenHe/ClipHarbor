@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../Resources/quick-phrases.zh-CN.json" LogicalName="ClipHarbor.quick-phrases.zh-CN.json" WithCulture="false" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   </ItemGroup>
 </Project>

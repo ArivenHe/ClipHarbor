@@ -154,10 +154,10 @@ final class ClipboardStore: ObservableObject {
             guard board.writeObjects(item.fileURLs.map { $0 as NSURL }) else { error = "复制文件失败。"; return false }
         } else if let name = item.imageName {
             guard let image = NSImage(contentsOf: imageDirectory.appendingPathComponent(name)) else { error = "图片缓存不可用。"; return false }
-            board.clearContents(); board.writeObjects([image])
+            board.clearContents(); guard board.writeObjects([image]) else { lastChange = board.changeCount; error = "复制图片失败。"; return false }
         } else {
             board.clearContents()
-            board.setString(item.text ?? "", forType: .string)
+            guard board.setString(item.text ?? "", forType: .string) else { lastChange = board.changeCount; error = "复制文本失败。"; return false }
             if !plain, let rtf = item.richText { board.setData(rtf, forType: .rtf) }
             if !plain, let html = item.html { board.setString(html, forType: .html) }
         }

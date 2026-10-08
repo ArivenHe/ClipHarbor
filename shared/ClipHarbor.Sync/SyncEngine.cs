@@ -37,12 +37,14 @@ public sealed class SyncEngine : IAsyncDisposable
     private DateTimeOffset _lastCleanup = DateTimeOffset.MinValue;
     private long _lastProgress;
     public bool Connected => _live;
+    public QuickPhraseSync Phrases { get; }
     public SyncEngine(SyncApi api, SyncConfig config, string root, string instanceId)
     {
         Api = api; Config = config; _instanceId = instanceId;
         var session = api.Session ?? throw new InvalidOperationException("需要登录。");
         Space = Protocol.Hash(Encoding.UTF8.GetBytes(api.BaseUri.AbsoluteUri + "|" + instanceId + "|" + session.AccountId));
         Journal = new(Path.Combine(root, "Sync", Space, session.SyncEpoch));
+        Phrases = new(api, config, Journal.DirectoryPath, instanceId);
         if (Journal.GetState("epoch") == "") Journal.SetState("epoch", session.SyncEpoch);
         Api.Progress = (received, total) =>
         {
@@ -52,7 +54,7 @@ public sealed class SyncEngine : IAsyncDisposable
             Status?.Invoke($"附件传输：{received / 1048576.0:F1} / {total / 1048576.0:F1} MB");
         };
     }
-    public void Start() { if (_run is null) { if (!Config.Enabled) Status?.Invoke("自动同步已暂停"); _run = Run(); } }
+    public void Start() { Phrases.Start(); if (_run is null) { if (!Config.Enabled) Status?.Invoke("自动同步已暂停"); _run = Run(); } }
     public async Task Capture(WireRecord wire, List<string> paths, long clipboardVersion, bool realCopy)
     {
         if (!Config.Accepts(wire.Kind) || _epochBlocked) return;
@@ -374,6 +376,7 @@ public sealed class SyncEngine : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _live = false; _lifetime.Cancel();
+        await Phrases.DisposeAsync();
         if (_run is not null) try { await _run; } catch (OperationCanceledException) { }
         if (_history is not null) try { await _history; } catch (OperationCanceledException) { }
         if (_receiving is not null) try { await _receiving; } catch (OperationCanceledException) { }

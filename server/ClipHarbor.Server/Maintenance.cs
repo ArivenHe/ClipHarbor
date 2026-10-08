@@ -33,10 +33,11 @@ public sealed class Maintenance(Database database, EventHub events, string root,
             await using (var reader = await command.ExecuteReaderAsync(token)) while (await reader.ReadAsync(token)) abandoned.Add(reader.GetGuid(0));
             await Database.Execute(connection, transaction, "DELETE FROM changes WHERE account_id=$1 AND created_at<now()-interval '90 days' AND sequence<$2", account, sequence);
             await Database.Execute(connection, transaction, "DELETE FROM clipboard_events WHERE account_id=$1 AND created_at<now()-interval '30 days' AND sequence<$2", account, state.Clipboard);
+            await Database.Execute(connection, transaction, "DELETE FROM quick_phrase_changes WHERE account_id=$1 AND created_at<now()-interval '90 days' AND sequence<(SELECT phrase_sequence FROM accounts WHERE id=$1)", account);
             await transaction.CommitAsync(token);
             foreach (var id in abandoned) { var directory = Path.Combine(root, "attachments", account.ToString(), id.ToString()); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
             if (expired.Count > 0) events.Notify(account, new("history", "0", state.Epoch));
         }
-        await Database.Execute(connection, null, "DELETE FROM snapshots WHERE expires_at<now(); DELETE FROM sessions WHERE refresh_expires<now()-interval '30 days'");
+        await Database.Execute(connection, null, "DELETE FROM quick_phrase_snapshots WHERE expires_at<now(); DELETE FROM snapshots WHERE expires_at<now(); DELETE FROM sessions WHERE refresh_expires<now()-interval '30 days'");
     }
 }

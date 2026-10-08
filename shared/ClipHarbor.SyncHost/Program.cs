@@ -52,11 +52,26 @@ sealed class NativeBridge
                 Receive = async (received, direct, expected) => { await Call("receive", new { received, direct, expected, space = engine!.Space, hidden = engine.Journal.Hidden(received.Record.RecordId) }); }
             };
             engine = next;
+            next.Phrases.Changed = library => PublishPhrases(library, next.Space);
             await Call("configuration", new { config });
             next.Status += value => { _ = Write(new { method = "status", @params = new { value } }); };
-            await Call("space", new { space = next.Space }); next.Start();
+            await Call("space", new { space = next.Space }); await PublishPhrases(next.Phrases.Library(), next.Space); next.Start();
         }
         catch { api.Dispose(); throw; }
+    }
+    readonly SemaphoreSlim phraseOutput = new(1, 1);
+    async Task PublishPhrases(PhraseLibrary library, string space)
+    {
+        await phraseOutput.WaitAsync(life.Token);
+        try
+        {
+            var snapshotId = Guid.NewGuid().ToString();
+            await Call("phraseLibraryBegin", new { space, snapshotId, library.Status, library.Supported, library.PendingIds });
+            foreach (var entities in library.Entities.Chunk(10)) await Call("phraseLibraryPage", new { space, snapshotId, entities });
+            foreach (var failures in library.Failures.Chunk(5)) await Call("phraseLibraryPage", new { space, snapshotId, failures });
+            await Call("phraseLibraryEnd", new { space, snapshotId });
+        }
+        finally { phraseOutput.Release(); }
     }
     public async Task Run()
     {
@@ -134,6 +149,16 @@ sealed class NativeBridge
                     }
                     break;
                 case "sync": if (engine is not null) await engine.SyncNow(); break;
+                case "phrases": if (engine is not null) await PublishPhrases(engine.Phrases.Library(), engine.Space); break;
+                case "phraseSave":
+                    if (engine is null || !p.TryGetProperty("space", out var saveSpace) || saveSpace.GetString() != engine.Space) throw new InvalidDataException("账号已改变，请重新打开短语。");
+                    await engine.Phrases.Save(Protocol.Decode<PhraseEntity>(p.GetProperty("entity").GetRawText()), p.TryGetProperty("newGroup", out var newGroup) && newGroup.ValueKind != JsonValueKind.Null ? Protocol.Decode<PhraseEntity>(newGroup.GetRawText()) : null, p.TryGetProperty("delete", out var deleting) && deleting.GetBoolean());
+                    break;
+                case "phraseResolve":
+                    if (engine is null || !p.TryGetProperty("space", out var resolveSpace) || resolveSpace.GetString() != engine.Space) throw new InvalidDataException("账号已改变，请重新打开短语。");
+                    await engine.Phrases.Resolve(p.GetProperty("failureId").GetString()!, p.GetProperty("choice").GetString()!);
+                    break;
+                case "phraseSync": if (engine is not null) await engine.Phrases.SyncNow(); break;
                 case "conflicts": result = new { path = engine?.Journal.ExportFailures() }; break;
                 case "revoke":
                     using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(life.Token))

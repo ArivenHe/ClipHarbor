@@ -22,11 +22,11 @@ internal sealed class SettingsDialog : ContentDialog
     private readonly ToggleSwitch _startup, _autoPaste, _plainText, _text, _images, _files, _favoriteExempt, _screenshots, _learning;
     private readonly NumberBox _limit, _imageLimit, _threshold;
     private readonly TextBox _excluded, _folder;
-    private readonly Button _hotkey;
+    private readonly Button _hotkey, _phraseHotkey;
     private readonly NumberBox _retentionValue;
     private readonly ComboBox _retentionUnit;
     private readonly Dictionary<ClipKind, (ToggleSwitch Enabled, NumberBox Value, ComboBox Unit)> _typeRules = [];
-    private bool _recording;
+    private bool _recording, _recordingPhrase;
 
     public SettingsDialog(HistoryStore store, string screenshotStatus, DesktopBridge desktop, ClipboardService clipboard, MainWindow window, CloudSyncService sync)
     {
@@ -44,10 +44,16 @@ internal sealed class SettingsDialog : ContentDialog
             Description("双击记录始终尝试粘贴到原应用。普通历史窗口的回车默认只复制。关闭窗口后继续在托盘记录。"),
             Description("Windows 无需 macOS 辅助功能授权。系统可能阻止向管理员权限窗口模拟粘贴，届时仍可手动粘贴。"), Heading("全局唤起键"));
         _hotkey = new() { Content = HotkeyLabel(_draft.HotkeyModifiers, _draft.HotkeyKey), HorizontalAlignment = HorizontalAlignment.Left };
-        _hotkey.Click += (_, _) => { _recording = true; _hotkey.Content = "按下组合键，Esc 取消"; _hotkey.Focus(FocusState.Programmatic); };
+        _hotkey.Click += (_, _) => { _recordingPhrase = false; _recording = true; _hotkey.Content = "按下组合键，Esc 取消"; _hotkey.Focus(FocusState.Programmatic); };
         var resetHotkey = new Button { Content = "恢复 Ctrl + Alt + V", HorizontalAlignment = HorizontalAlignment.Left };
         resetHotkey.Click += (_, _) => { _draft.HotkeyModifiers = 3; _draft.HotkeyKey = 0x56; _recording = false; UpdateHotkeyLabel(); };
         Add(general, _hotkey, resetHotkey, Description("这只影响全局唤起。Tab、方向键、回车、空格和 Esc 的窗口操作始终可用。"));
+
+        _phraseHotkey = new() { Content = HotkeyLabel(_draft.PhraseHotkeyModifiers, _draft.PhraseHotkeyKey), HorizontalAlignment = HorizontalAlignment.Left };
+        _phraseHotkey.Click += (_, _) => { _recordingPhrase = true; _recording = true; _phraseHotkey.Content = "按下组合键，Esc 取消"; _phraseHotkey.Focus(FocusState.Programmatic); };
+        var clearPhraseHotkey = new Button { Content = "取消短语快捷键", HorizontalAlignment = HorizontalAlignment.Left };
+        clearPhraseHotkey.Click += (_, _) => { _draft.PhraseHotkeyModifiers = _draft.PhraseHotkeyKey = 0; _recording = false; UpdateHotkeyLabel(); };
+        Add(general, Heading("直接打开短语面板"), _phraseHotkey, clearPhraseHotkey);
 
         var recording = Page(); pages.Add("记录与存储", recording);
         _text = Switch("记录文本与链接", _draft.RecordText); _images = Switch("记录图片与图片文件引用", _draft.RecordImages); _files = Switch("记录其他文件引用", _draft.RecordFiles);
@@ -109,6 +115,7 @@ internal sealed class SettingsDialog : ContentDialog
             Description("本地数据在 LocalAppData / ClipHarbor，历史没有应用级加密。开启同步后会通过 HTTPS 上传到指定服务器；服务器管理员可读取内容。登录令牌存入 Windows 凭据管理器。声明的敏感剪贴板标记会跳过记录，但无法识别所有密码。"), Heading("清理"), cleanup, confirmation, delete);
 
         var about = Page(); pages.Add("关于", about);
+        about.Children.Add(new Image { Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri("ms-appx:///Assets/ClipHarbor.png")), Width = 88, Height = 88, HorizontalAlignment = HorizontalAlignment.Left });
         Add(about, Heading("拾贴 · ClipHarbor"), Description($"Windows 版 · WinUI 3 · {typeof(App).Assembly.GetName().Version?.ToString(3)}\n复制即收纳，随时找回来。"),
             Action("GitHub 项目", async () => { await Launcher.LaunchUriAsync(new Uri("https://github.com/ArivenHe/ClipHarbor")); }),
             Description("图片、PDF、文本及系统支持的音视频可直接预览。Office 等其他格式可打开关联应用。HEIC 等格式可能需要 Windows 图像扩展。"),
@@ -135,16 +142,19 @@ internal sealed class SettingsDialog : ContentDialog
         void Update() { state.Text = _sync.Status; }
         _sync.Changed += Update; Closed += (_, _) => _sync.Changed -= Update;
         var enabled = Switch("自动同步", config.Enabled); var direct = Switch("跨设备直接粘贴", config.DirectPaste);
+        var phrases = Switch("同步快捷短语", config.SyncPhrases);
         var text = Switch("同步文本与链接", config.SyncText); var images = Switch("同步图片", config.SyncImages); var files = Switch("同步文件", config.SyncFiles);
         Add(page, Heading("自建服务器"), url, user, password, device, remember, import,
             Action("测试连接", async () => { await CloudSyncService.Test(url.Text); ShowStatus("连接成功，服务器协议兼容。"); }),
             Action("登录并启用同步", async () => { await _sync.Login(url.Text, user.Text, password.Password, device.Text, remember.IsOn, import.SelectedIndex); password.Password = ""; enabled.IsOn = true; ShowStatus("已登录，正在同步。"); }),
-            Heading("同步方式"), enabled, direct, text, images, files,
+            Heading("同步方式"), enabled, direct, text, images, files, phrases,
+            Description("快捷短语：" + _sync.Phrases.Status),
+            Action("打开快捷短语", () => { Hide(); _window.OpenPhrases(); return Task.CompletedTask; }),
             Description("另一台设备复制后，在此电脑直接 Ctrl + V。文件下载完成前保留当前剪贴板；单文件上限 100 MB，一次最多 100 个文件、500 MB。第一版支持普通文件。连接期间只接收新复制的内容，重连补历史。"),
             Action("应用同步选项", async () =>
             {
                 var next = ClipHarbor.Sync.Protocol.Decode<ClipHarbor.Sync.SyncConfig>(ClipHarbor.Sync.Protocol.Encode(_sync.Config));
-                next.Enabled = enabled.IsOn; next.DirectPaste = direct.IsOn; next.SyncText = text.IsOn; next.SyncImages = images.IsOn; next.SyncFiles = files.IsOn; next.KeepSignedIn = remember.IsOn;
+                next.Enabled = enabled.IsOn; next.DirectPaste = direct.IsOn; next.SyncText = text.IsOn; next.SyncImages = images.IsOn; next.SyncFiles = files.IsOn; next.SyncPhrases = phrases.IsOn; next.KeepSignedIn = remember.IsOn;
                 await _sync.Configure(next); ShowStatus("同步选项已保存。");
             }), state,
             Action("立即补同步历史", async () => { await _sync.SyncNow(); ShowStatus("历史已补同步。"); }),
@@ -213,8 +223,8 @@ internal sealed class SettingsDialog : ContentDialog
         if (NativeMethods.GetAsyncKeyState(0x10) < 0) modifiers |= 4;
         if (NativeMethods.GetAsyncKeyState(0x5B) < 0 || NativeMethods.GetAsyncKeyState(0x5C) < 0) modifiers |= 8;
         if ((modifiers & 11) == 0) { ShowError("全局唤起键需要包含 Ctrl、Alt 或 Win。"); return; }
-        _draft.HotkeyModifiers = modifiers; _draft.HotkeyKey = (uint)args.Key; _recording = false; UpdateHotkeyLabel();
+        if (_recordingPhrase) { _draft.PhraseHotkeyModifiers = modifiers; _draft.PhraseHotkeyKey = (uint)args.Key; } else { _draft.HotkeyModifiers = modifiers; _draft.HotkeyKey = (uint)args.Key; } _recording = false; UpdateHotkeyLabel();
     }
-    private void UpdateHotkeyLabel() => _hotkey.Content = HotkeyLabel(_draft.HotkeyModifiers, _draft.HotkeyKey);
-    private static string HotkeyLabel(uint modifiers, uint key) => string.Join(" + ", new[] { (2u, "Ctrl"), (1u, "Alt"), (4u, "Shift"), (8u, "Win") }.Where(p => (modifiers & p.Item1) != 0).Select(p => p.Item2).Append(((VirtualKey)key).ToString()));
+    private void UpdateHotkeyLabel() { _hotkey.Content = HotkeyLabel(_draft.HotkeyModifiers, _draft.HotkeyKey); if (_phraseHotkey is not null) _phraseHotkey.Content = HotkeyLabel(_draft.PhraseHotkeyModifiers, _draft.PhraseHotkeyKey); }
+    private static string HotkeyLabel(uint modifiers, uint key) => key == 0 ? "未分配 · 点击录制" : string.Join(" + ", new[] { (2u, "Ctrl"), (1u, "Alt"), (4u, "Shift"), (8u, "Win") }.Where(p => (modifiers & p.Item1) != 0).Select(p => p.Item2).Append(((VirtualKey)key).ToString()));
 }

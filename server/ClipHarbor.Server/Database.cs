@@ -34,6 +34,7 @@ public sealed class Database(string connectionString)
         await Execute(connection, transaction, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "schema.sql")));
         var version = Convert.ToInt32(await Scalar(connection, transaction, "SELECT schema_version FROM instance WHERE singleton"));
         if (version != 2) throw new InvalidOperationException("数据库版本不兼容。");
+        if (Convert.ToInt32(await Scalar(connection, transaction, "SELECT phrase_schema_version FROM instance WHERE singleton")) != 1) throw new InvalidOperationException("快捷短语数据库版本不兼容。");
         await transaction.CommitAsync();
     }
     public async Task<string> InstanceId()

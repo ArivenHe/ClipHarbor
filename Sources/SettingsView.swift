@@ -130,8 +130,8 @@ struct SettingsView: View {
     }
     private var aboutPage: some View {
             VStack(spacing: 14) {
-                Image(systemName: "doc.on.clipboard").font(.system(size: 56)).foregroundStyle(.tint)
                 Text("拾贴 · ClipHarbor").font(.title)
+                Image(nsImage: AppBrand.icon).resizable().scaledToFit().frame(width: 88, height: 88).accessibilityLabel("拾贴应用图标")
                 Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.2.1") · macOS 26+")
                 Text("复制即收纳，随时找回来。").foregroundStyle(.secondary)
                 KeyboardButton("GitHub") { NSWorkspace.shared.open(URL(string: "https://github.com/ArivenHe/ClipHarbor")!) }

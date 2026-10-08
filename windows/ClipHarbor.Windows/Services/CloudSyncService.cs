@@ -22,6 +22,22 @@ internal sealed class CloudSyncService : IAsyncDisposable
     public SyncConfig Config => _store.Settings.Sync;
     public string Status { get; private set; } = "未登录";
     public event Action? Changed;
+    public PhraseLibrary Phrases { get; private set; } = new([], [], [], "登录后可以维护自己的短语", false);
+    public string? PhraseSpace { get; private set; }
+    public bool CanEditPhrases => PhraseSpace is not null && Phrases.Supported;
+    public event Action? PhrasesChanged;
+    private void ClearPhrases() { PhraseSpace = null; Phrases = new([], [], [], "登录后可以维护自己的短语", false); PhrasesChanged?.Invoke(); }
+    public async Task SavePhrase(PhraseEntity entity, string space, PhraseEntity? newGroup = null, bool delete = false)
+    {
+        var engine = _engine; if (engine is null || PhraseSpace != space || engine.Space != space) throw new InvalidDataException("账号已改变，请重新打开短语。");
+        await engine.Phrases.Save(entity, newGroup, delete);
+    }
+    public async Task ResolvePhrase(string id, string choice, string space)
+    {
+        var engine = _engine; if (engine is null || PhraseSpace != space || engine.Space != space) throw new InvalidDataException("账号已改变，请重新打开短语。");
+        await engine.Phrases.Resolve(id, choice);
+    }
+    public Task SyncPhrasesNow() => _engine?.Phrases.SyncNow() ?? Task.CompletedTask;
     public string? DataDirectory => _engine?.Journal.DirectoryPath;
     public CloudSyncService(HistoryStore store, ClipboardService clipboard, DispatcherQueue dispatcher)
     {
@@ -58,10 +74,11 @@ internal sealed class CloudSyncService : IAsyncDisposable
         config.ServerUrl = Protocol.Server(server).AbsoluteUri.TrimEnd('/'); config.Username = username.Trim(); config.DeviceName = device.Trim(); config.KeepSignedIn = keepSignedIn; config.Enabled = true; config.CredentialId = Guid.NewGuid().ToString(); config.ServerInstanceId = null;
         using var api = new SyncApi(Protocol.Server(config.ServerUrl));
         var session = await api.Login(new(config.Username, password, config.DeviceName, config.DeviceId));
+        ClearPhrases();
         config.ServerInstanceId = api.Metadata!.InstanceId;
         _store.CaptureSyncSpace = null;
         if (keepSignedIn) SyncCredentials.Write(config.CredentialId, Protocol.Encode(session));
-        if (_engine is not null) await _engine.DisposeAsync();
+        if (_engine is not null) { var oldEngine = _engine; _engine = null; await oldEngine.DisposeAsync(); }
         var oldCredential = Config.CredentialId; _store.Settings.Sync = config; _session = session;
         SyncCredentials.Delete(oldCredential); await _store.SaveAsync(); await Connect();
         if (importMode > 0)
@@ -69,7 +86,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
     }
     public async Task Configure(SyncConfig config)
     {
-        if (_engine is not null) { await _engine.DisposeAsync(); _engine = null; }
+        if (_engine is not null) { var oldEngine = _engine; _engine = null; await oldEngine.DisposeAsync(); }
         _store.Settings.Sync = config; await _store.SaveAsync();
         if (!config.KeepSignedIn) SyncCredentials.Delete(config.CredentialId);
         else if (_session is not null) SyncCredentials.Write(config.CredentialId, Protocol.Encode(_session));
@@ -101,7 +118,10 @@ internal sealed class CloudSyncService : IAsyncDisposable
                 }),
                 Receive = (received, direct, expected) => Dispatch(() => Receive(received, direct, expected))
             };
-            _engine = engine; engine.Status += SetStatus; _store.ActiveSyncSpace = _store.CaptureSyncSpace = engine.Space; Config.LastSpace = engine.Space;
+            _engine = engine;
+            PhraseSpace = engine.Space; Phrases = engine.Phrases.Library(); PhrasesChanged?.Invoke();
+            engine.Phrases.Changed = library => Dispatch(() => { if (_engine == engine && PhraseSpace == engine.Space) { Phrases = library; PhrasesChanged?.Invoke(); } return Task.CompletedTask; });
+            engine.Status += value => { if (_engine == engine) SetStatus(value); }; _store.ActiveSyncSpace = _store.CaptureSyncSpace = engine.Space; Config.LastSpace = engine.Space;
             await _store.NotifyAsync(); engine.Start();
         }
         catch { api.Dispose(); throw; }
@@ -158,8 +178,9 @@ internal sealed class CloudSyncService : IAsyncDisposable
     public string? Conflicts() => _engine?.Journal.ExportFailures();
     public async Task Logout()
     {
+        ClearPhrases();
         var tokens = _session;
-        if (_engine is not null) { await _engine.DisposeAsync(); _engine = null; }
+        if (_engine is not null) { var oldEngine = _engine; _engine = null; await oldEngine.DisposeAsync(); }
         _session = null; _store.CaptureSyncSpace = null; SyncCredentials.Delete(Config.CredentialId); Config.Enabled = false; await _store.SaveAsync();
         if (tokens is not null)
         {
@@ -229,7 +250,7 @@ internal sealed class CloudSyncService : IAsyncDisposable
     {
         _clipboard.Copied -= Captured; _clipboard.HistoricalCapture -= HistoricalCaptured; _store.SyncMutation -= Mutated;
         _life.Cancel(); if (_revocations is not null) try { await _revocations; } catch (OperationCanceledException) { }
-        if (_engine is not null) await _engine.DisposeAsync();
+        if (_engine is not null) { var oldEngine = _engine; _engine = null; await oldEngine.DisposeAsync(); }
         _life.Dispose();
     }
 }

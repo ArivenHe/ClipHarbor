@@ -46,6 +46,7 @@ struct HistoryView: View {
                 Label("全部", systemImage: "tray.full").tag("all")
                 Label("收藏", systemImage: "star").tag("favorites")
                 Label("常用", systemImage: "sparkles").tag("frequent")
+                Button { delegate?.browserMode = "phrases" } label: { Label("快捷短语", systemImage: "text.bubble") }
                 Label("系统截图", systemImage: "camera.viewfinder").tag("screenshots")
                 Section("类型") {
                     ForEach(ClipKind.allCases) { kind in Label(kind.title, systemImage: kind.symbol).tag(kind.rawValue) }
@@ -106,6 +107,7 @@ struct HistoryView: View {
                                     }
                                     .contextMenu {
                                         Button("复制") { delegate?.use(item, quick: quick, paste: false) }
+                                        if [.text, .link].contains(item.kind), let text = item.text { Button("存为个人短语") { delegate?.phrases.requestNew(text: text); delegate?.openPhrases() } }
                                         if item.text != nil { Button("复制为纯文本") { delegate?.use(item, quick: quick, plain: true, paste: false) } }
                                         Button(item.favorite ? "取消收藏" : "收藏") { store.toggleFavorite(item.id) }
                                         if !item.fileURLs.isEmpty { Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting(item.fileURLs) } }
@@ -289,6 +291,7 @@ final class PreviewController: NSObject, @preconcurrency QLPreviewPanelDataSourc
 private struct RecordActionsView: View {
     private enum Action: String, Hashable {
         case copy = "复制", copyPlain = "复制为纯文本", paste = "粘贴到原应用", favorite = "收藏／取消收藏"
+        case savePhrase = "存为个人短语"
         case reveal = "在 Finder 中显示", learning = "允许／排除常用内容学习", delete = "删除记录"
     }
     let item: ClipItem
@@ -298,7 +301,7 @@ private struct RecordActionsView: View {
     @FocusState private var focus: Action?
     private var actions: [Action] {
         var result: [Action] = [.copy, .paste]
-        if item.text != nil { result.append(.copyPlain) }
+        if [.text, .link].contains(item.kind), item.text != nil { result += [.copyPlain, .savePhrase] }
         result.append(.favorite)
         if !item.fileURLs.isEmpty { result.append(.reveal) }
         return result + [.learning, .delete]
@@ -325,6 +328,7 @@ private struct RecordActionsView: View {
         case .copy: AppDelegate.shared?.use(item, quick: quick, paste: false)
         case .copyPlain: AppDelegate.shared?.use(item, quick: quick, plain: true, paste: false)
         case .paste: AppDelegate.shared?.use(item, quick: quick, paste: true)
+        case .savePhrase: AppDelegate.shared?.phrases.requestNew(text: item.text ?? ""); AppDelegate.shared?.openPhrases()
         case .favorite: store.toggleFavorite(item.id)
         case .reveal: NSWorkspace.shared.activateFileViewerSelecting(item.fileURLs)
         case .learning: store.toggleLearningExclusion(item.id)

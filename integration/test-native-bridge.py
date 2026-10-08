@@ -70,7 +70,7 @@ def reader():
                 received.append(params)
             elif method == "status":
                 statuses.append(params["value"])
-            elif method not in ("persist", "configuration", "space"):
+            elif method not in ("persist", "configuration", "space", "phraseLibraryBegin", "phraseLibraryPage", "phraseLibraryEnd"):
                 raise AssertionError("Unknown native callback")
             if "callId" in message:
                 send({"callId": message["callId"], "result": result})

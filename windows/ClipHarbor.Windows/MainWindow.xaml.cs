@@ -20,6 +20,8 @@ public sealed partial class MainWindow : Window
     private readonly Task _initialization;
     private ClipboardService? _clipboard;
     private CloudSyncService? _sync;
+    private QuickPhrasePage? _phrases;
+    private readonly MenuFlyoutItem _recordContextSave = new() { Text = "存为个人短语" };
     private ScreenshotWatcher? _screenshots;
     private readonly DispatcherTimer _cleanupTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private readonly DispatcherTimer _noteTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
@@ -34,6 +36,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true; SetTitleBar(AppTitleBar);
         SystemBackdrop = new MicaBackdrop();
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "ClipHarbor.ico"));
         AppWindow.Resize(new(1120, 720));
         AppWindow.IsShownInSwitchers = false;
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -41,6 +44,10 @@ public sealed partial class MainWindow : Window
         _desktop.Command += command => DispatcherQueue.TryEnqueue(async () => await HandleCommandAsync(command));
         AppWindow.Closing += (_, args) => { if (!_quitting) { args.Cancel = true; HideHistory(); } };
         Navigation.SelectedItem = Navigation.MenuItems[0];
+        var context = new MenuFlyout(); var contextCopy = new MenuFlyoutItem { Text = "复制" }; contextCopy.Click += async (_, _) => await UseSelectedAsync(false); context.Items.Add(contextCopy);
+        _recordContextSave.Click += SavePhrase_Click; context.Items.Add(_recordContextSave);
+        var contextDelete = new MenuFlyoutItem { Text = "删除记录" }; contextDelete.Click += Delete_Click; context.Items.Add(contextDelete); RecordList.ContextFlyout = context;
+        RecordList.RightTapped += (_, args) => { DependencyObject? node = args.OriginalSource as DependencyObject; while (node is not null && node != RecordList) { if (node is FrameworkElement { DataContext: ClipRecord record }) { RecordList.SelectedItem = record; break; } node = VisualTreeHelper.GetParent(node); } };
         _store.Changed += Refresh;
         _cleanupTimer.Tick += async (_, _) => await GuardAsync(async () => { _store.Prune(); await _store.NotifyAsync(); });
         _noteTimer.Tick += async (_, _) => { _noteTimer.Stop(); if (Selected is { } item) _sync?.MetadataChanged(item); await GuardAsync(_store.SaveAsync); };
@@ -57,6 +64,7 @@ public sealed partial class MainWindow : Window
             _clipboard.Error += ShowError;
             _sync = new(_store, _clipboard, DispatcherQueue);
             _sync.Changed += () => _desktop.SetSyncStatus(_sync.Status);
+            _phrases = new(_sync, _store.DirectoryPath, UsePhraseAsync, ShowSettingsAsync, HideHistory); PhraseHost.Content = _phrases;
             _ = _sync.Initialize();
             _screenshots = new(_store, _clipboard, DispatcherQueue);
             if (!_desktop.SetHotkey(_store.Settings)) ShowError("全局唤起键被其他应用占用，请在设置中更改。托盘仍可打开历史。");
@@ -66,6 +74,7 @@ public sealed partial class MainWindow : Window
     }
     public void ShowHistory(bool quick)
     {
+        Navigation.SelectedItem = Navigation.MenuItems[0];
         _desktop.RememberTarget(NativeMethods.GetForegroundWindow());
         _quick = quick; AppWindow.Show(); Activate();
         UseButton.Content = quick && _store.Settings.AutoPaste ? "粘贴" : "复制";
@@ -79,6 +88,7 @@ public sealed partial class MainWindow : Window
         {
             case "quick": if (AppWindow.IsVisible && NativeMethods.IsOwnWindow(NativeMethods.GetForegroundWindow())) HideHistory(); else ShowHistory(true); break;
             case "history": ShowHistory(false); break;
+            case "phrases": OpenPhrases(); break;
             case "pause": TogglePause(); break;
             case "settings": ShowHistory(false); await ShowSettingsAsync(); break;
             case "quit": await GuardAsync(async () => { _quitting = true; _cleanupTimer.Stop(); _noteTimer.Stop(); _screenshots?.Dispose(); if (_sync is not null) await _sync.DisposeAsync(); _clipboard?.Dispose(); if (_ready) await _store.SaveAsync(); _desktop.Dispose(); Close(); Application.Current.Exit(); }); break;
@@ -111,6 +121,7 @@ public sealed partial class MainWindow : Window
     private void UpdateDetails()
     {
         var item = Selected;
+        SavePhraseAction.Visibility = _recordContextSave.Visibility = item?.Kind is ClipKind.Text or ClipKind.Link ? Visibility.Visible : Visibility.Collapsed;
         Details.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
         PreviewButton.IsEnabled = item is not null;
         FavoriteButton.IsEnabled = MoreButton.IsEnabled = UseButton.IsEnabled = item is not null;
@@ -155,6 +166,25 @@ public sealed partial class MainWindow : Window
             else if (_quick) { HideHistory(); if (NativeMethods.IsPasteTarget(target)) NativeMethods.SetForegroundWindow(target); }
         });
     }
+    internal void OpenPhrases()
+    {
+        _desktop.RememberTarget(NativeMethods.GetForegroundWindow()); _quick = true; AppWindow.Show(); Activate();
+        Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().First(i => i.Tag as string == "phrases");
+        DispatcherQueue.TryEnqueue(() => _phrases?.FocusSearch());
+    }
+    private async Task<bool> UsePhraseAsync(string text, bool? paste)
+    {
+        if (_clipboard is null) return false;
+        var target = _desktop.PasteTarget; await _clipboard.CopyAsync(new ClipRecord { Kind = ClipKind.Text, Text = text }, plain: true, trackUsage: false);
+        if (paste ?? (_quick && _store.Settings.AutoPaste)) { HideHistory(); try { await NativeMethods.PasteAsync(target); } catch (Exception e) { ShowError("内容已复制，可手动 Ctrl+V。" + e.Message); } }
+        else if (_quick) { HideHistory(); if (NativeMethods.IsPasteTarget(target)) NativeMethods.SetForegroundWindow(target); }
+        return true;
+    }
+    private async void SavePhrase_Click(object sender, RoutedEventArgs args)
+    {
+        if (Selected?.Kind is not (ClipKind.Text or ClipKind.Link) || _phrases is null) return;
+        var text = Selected.Text ?? ""; OpenPhrases(); await _phrases.NewFromHistory(text);
+    }
     private async Task GuardAsync(Func<Task> operation)
     {
         try { await operation(); }
@@ -179,6 +209,9 @@ public sealed partial class MainWindow : Window
     {
         if (args.IsSettingsSelected) return;
         _filter = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "all";
+        HistoryContent.Visibility = _filter == "phrases" ? Visibility.Collapsed : Visibility.Visible;
+        PhraseHost.Visibility = _filter == "phrases" ? Visibility.Visible : Visibility.Collapsed;
+        if (_filter == "phrases") _phrases?.FocusSearch();
         Refresh();
     }
     private async void Navigation_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
@@ -218,7 +251,7 @@ public sealed partial class MainWindow : Window
     }
     private void Root_KeyDown(object sender, KeyRoutedEventArgs args)
     {
-        if (args.Key != VirtualKey.Escape || _dialogOpen) return;
+        if (_filter == "phrases" || args.Key != VirtualKey.Escape || _dialogOpen) return;
         if (NoteBox.FocusState != FocusState.Unfocused) FocusRecords();
         else if (!string.IsNullOrEmpty(SearchBox.Text)) { SearchBox.Text = ""; SearchBox.Focus(FocusState.Keyboard); }
         else HideHistory();
@@ -283,7 +316,7 @@ public sealed partial class MainWindow : Window
     private async Task ShowSettingsAsync()
     {
         await _initialization;
-        if (!_ready || _dialogOpen) return;
+        if (!_ready || _dialogOpen || _phrases?.DialogOpen == true) return;
         _dialogOpen = true;
         try
         {
@@ -298,7 +331,7 @@ public sealed partial class MainWindow : Window
         {
             _dialogOpen = false;
             Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(item => item.Tag as string == _filter);
-            SearchBox.Focus(FocusState.Programmatic);
+            if (_filter == "phrases") _phrases?.FocusSearch(); else SearchBox.Focus(FocusState.Programmatic);
         }
     }
 }

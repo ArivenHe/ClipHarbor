@@ -47,6 +47,7 @@ try
     await a.Login(new("alice", password, "Mac test", Guid.NewGuid().ToString()));
     await b.Login(new("alice", password, "Windows test", Guid.NewGuid().ToString()));
     await outsider.Login(new("bob", password, "isolated account", Guid.NewGuid().ToString()));
+    await QuickPhraseIntegration.Run(a, b, outsider, Check, Expect);
     async Task<OperationResult> Apply(SyncApi api, SyncOperation operation) => (await api.Post<OperationsResponse>("sync/operations", new OperationsRequest(api.Session!.SyncEpoch, [operation]))).Results.Single();
     var record = Text("cross platform " + Guid.NewGuid()); var op = new SyncOperation(Guid.NewGuid().ToString(), "create", record.RecordId, record);
     var created = (await Apply(a, op)).Record!;

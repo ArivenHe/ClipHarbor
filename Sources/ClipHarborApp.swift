@@ -15,7 +15,7 @@ struct ClipHarborApp: App {
     }
     var body: some Scene {
         WindowGroup("拾贴 · ClipHarbor", id: "history") {
-            HistoryView(store: delegate.store, quick: false)
+            ClipBrowserView(delegate: delegate, quick: false)
                 .frame(minWidth: 760, minHeight: 480)
         }
         .defaultSize(width: 1000, height: 680)
@@ -23,15 +23,16 @@ struct ClipHarborApp: App {
             CommandGroup(replacing: .appSettings) { Button("设置…") { delegate.openSettings() } }
             CommandGroup(replacing: .appTermination) { Button("退出拾贴") { NSApp.terminate(nil) } }
         }
-        MenuBarExtra("拾贴", systemImage: "doc.on.clipboard") {
-            Button("打开快捷面板") { delegate.togglePanel() }
+        MenuBarExtra {
+            Button("打开快捷面板") { delegate.browserMode = "history"; delegate.togglePanel() }
             Button("打开历史") { delegate.openHistory() }
+            Button("快捷短语") { delegate.openPhrases() }
             Toggle("暂停记录", isOn: Binding(get: { delegate.store.paused }, set: { delegate.store.paused = $0 }))
             SyncMenuStatus(sync: delegate.sync)
             Divider()
             Button("设置…") { delegate.openSettings() }
             Button("退出拾贴") { NSApp.terminate(nil) }
-        }
+        } label: { Image(nsImage: AppBrand.menuIcon).accessibilityLabel("拾贴") }
         Settings { SettingsView(store: delegate.store).frame(width: 640, height: 650) }
     }
 }
@@ -42,11 +43,13 @@ private struct SyncMenuStatus: View {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
+    @Published var browserMode = "history"
     static weak var shared: AppDelegate?
     override init() { super.init(); Self.shared = self }
     let store = ClipboardStore()
     lazy var sync = CloudSync(store: store)
+    lazy var phrases = QuickPhraseStore(sync: sync, directory: store.directory)
     lazy var screenshotMonitor = ScreenshotMonitor(store: store)
     private var panel: NSPanel?
     private var historyWindow: NSWindow?
@@ -73,7 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults.standard
         if let tab = action.settingsTab { defaults.set(tab, forKey: "settingsTab"); openSettings(); return }
         switch action {
-        case .panel: togglePanel()
+        case .panel: browserMode = "history"; togglePanel()
+        case .phrasePanel: openPhrases()
         case .history: openHistory()
         case .settings: openSettings()
         case .pause: store.paused.toggle()
@@ -136,8 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
-    func togglePanel() {
-        if panel?.isVisible == true { closePanel(); return }
+    func togglePanel(forceOpen: Bool = false) {
+        if !forceOpen && panel?.isVisible == true { closePanel(); return }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = NSWorkspace.shared.frontmostApplication }
         if panel == nil {
             let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 520), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -146,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.level = .floating
             window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: HistoryView(store: store, quick: true))
+            window.contentView = NSHostingView(rootView: ClipBrowserView(delegate: self, quick: true))
             panel = window
         }
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }), let panel {
@@ -157,7 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.makeKeyAndOrderFront(nil)
     }
     func closePanel() { panel?.orderOut(nil); previousApp?.activate(options: [.activateIgnoringOtherApps]) }
+    func openPhrases() { browserMode = "phrases"; togglePanel(forceOpen: true) }
     func openHistory() {
+        browserMode = "history"
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = NSWorkspace.shared.frontmostApplication }
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.title.contains("ClipHarbor") }) { window.makeKeyAndOrderFront(nil) }
@@ -166,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
                 window.title = "拾贴 · ClipHarbor"
                 window.isReleasedWhenClosed = false
-                window.contentView = NSHostingView(rootView: HistoryView(store: store, quick: false))
+                window.contentView = NSHostingView(rootView: ClipBrowserView(delegate: self, quick: false))
                 window.center()
                 historyWindow = window
             }
@@ -175,6 +181,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func use(_ item: ClipItem, quick: Bool, plain: Bool = false, paste: Bool? = nil) {
         guard store.copy(item, plain: plain || UserDefaults.standard.bool(forKey: "plainText")) else { return }
+        finishUse(quick: quick, paste: paste)
+    }
+    @discardableResult func usePhrase(_ body: String, quick: Bool, paste: Bool? = nil) -> Bool {
+        guard store.copy(ClipItem(kind: .text, text: body), plain: true) else { return false }
+        finishUse(quick: quick, paste: paste); return true
+    }
+    private func finishUse(quick: Bool, paste: Bool?) {
         let shouldPaste = paste ?? (quick && UserDefaults.standard.bool(forKey: "autoPaste"))
         let target = previousApp
         if quick { closePanel() }

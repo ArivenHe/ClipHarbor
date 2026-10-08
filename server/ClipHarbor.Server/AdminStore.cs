@@ -19,7 +19,7 @@ public sealed class AdminStore(Database database, EventHub hub)
           (SELECT count(*) FROM devices d WHERE d.account_id=a.id),
           (SELECT count(*) FROM sessions s WHERE s.account_id=a.id AND NOT s.revoked AND s.refresh_expires>now()),
           ((SELECT coalesce(sum(byte_length),0) FROM uploads u WHERE u.account_id=a.id)+
-           (SELECT coalesce(sum(octet_length(data::text)),0) FROM records r WHERE r.account_id=a.id AND NOT r.deleted))::bigint,
+           (SELECT coalesce(sum(octet_length(data::text)),0) FROM records r WHERE r.account_id=a.id AND NOT r.deleted)+coalesce((SELECT used_bytes FROM quick_phrase_usage q WHERE q.account_id=a.id),0))::bigint,
           (SELECT max(last_seen) FROM devices d WHERE d.account_id=a.id)
         FROM accounts a
         """;
@@ -45,7 +45,7 @@ public sealed class AdminStore(Database database, EventHub hub)
         await using var command = Database.Command(connection, null, """
             SELECT (SELECT count(*) FROM accounts),(SELECT count(*) FROM accounts WHERE enabled),
               (SELECT count(*) FROM devices),(SELECT count(*) FROM records WHERE NOT deleted),
-              ((SELECT coalesce(sum(byte_length),0) FROM uploads)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE NOT deleted))::bigint
+              ((SELECT coalesce(sum(byte_length),0) FROM uploads)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE NOT deleted)+(SELECT coalesce(sum(used_bytes),0) FROM quick_phrase_usage))::bigint
             """);
         await using var reader = await command.ExecuteReaderAsync(); await reader.ReadAsync();
         return new { users = reader.GetInt64(0), enabledUsers = reader.GetInt64(1), devices = reader.GetInt64(2), records = reader.GetInt64(3), usedBytes = reader.GetInt64(4) };

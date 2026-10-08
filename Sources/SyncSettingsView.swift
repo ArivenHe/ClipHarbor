@@ -39,10 +39,12 @@ struct SyncSettingsView: View {
                 KeyboardToggle("同步文本与链接", isOn: $options.syncText)
                 KeyboardToggle("同步图片", isOn: $options.syncImages)
                 KeyboardToggle("同步文件", isOn: $options.syncFiles)
+                KeyboardToggle("同步快捷短语", isOn: Binding(get: { options.syncPhrases ?? true }, set: { options.syncPhrases = $0 }))
+                Button("打开快捷短语") { AppDelegate.shared?.openPhrases() }
                 Text("另一台设备复制后，在此电脑直接 ⌘V。文件完整下载并校验后才更新剪切板；无需辅助功能权限。断网重连补历史，连接期间接收新复制的内容。")
                 Text("第一版支持普通文件：单文件 100 MB，一次最多 100 个、500 MB。服务器及本机同步缓存上限 2 GB。")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("应用同步选项") { perform { var next = sync.config; next.enabled = options.enabled; next.directPaste = options.directPaste; next.syncText = options.syncText; next.syncImages = options.syncImages; next.syncFiles = options.syncFiles; next.keepSignedIn = remember; try await sync.apply(next); feedback = "同步选项已保存。" } }
+                Button("应用同步选项") { perform { var next = sync.config; next.enabled = options.enabled; next.directPaste = options.directPaste; next.syncText = options.syncText; next.syncImages = options.syncImages; next.syncFiles = options.syncFiles; next.syncPhrases = options.syncPhrases; next.keepSignedIn = remember; try await sync.apply(next); feedback = "同步选项已保存。" } }
             }
             Section("状态与管理") {
                 Text(sync.status).textSelection(.enabled)

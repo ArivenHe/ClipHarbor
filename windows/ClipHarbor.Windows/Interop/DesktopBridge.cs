@@ -12,6 +12,7 @@ internal sealed class DesktopBridge : IDisposable
     private readonly uint _taskbarCreated = NativeMethods.RegisterWindowMessage("TaskbarCreated");
     private readonly nint _hook;
     private NativeMethods.NotifyIconData _tray;
+    private nint _trayIcon;
     public nint PasteTarget { get; private set; }
     public event Action<string>? Command;
     public bool Paused { get; set; }
@@ -31,10 +32,12 @@ internal sealed class DesktopBridge : IDisposable
         _foreground = (_, _, window, _, _, _, _) => RememberTarget(window);
         if (!NativeMethods.SetWindowSubclass(hwnd, _subclass, 1, 0)) throw new InvalidOperationException("无法初始化托盘窗口。");
         _hook = NativeMethods.SetWinEventHook(3, 3, 0, _foreground, 0, 0, 0); // EVENT_SYSTEM_FOREGROUND, out-of-context
+        _trayIcon = NativeMethods.LoadImage(0, Path.Combine(AppContext.BaseDirectory, "Assets", "ClipHarbor.ico"), 1, 32, 32, 0x10);
+        if (_trayIcon == 0) throw new InvalidOperationException("无法加载拾贴托盘图标。");
         _tray = new()
         {
             Size = (uint)Marshal.SizeOf<NativeMethods.NotifyIconData>(), Window = hwnd, Id = 1,
-            Flags = 7 | 0x80, CallbackMessage = TrayMessage, Icon = NativeMethods.LoadIcon(0, (nint)32512),
+            Flags = 7 | 0x80, CallbackMessage = TrayMessage, Icon = _trayIcon,
             Tip = "拾贴 · ClipHarbor", Info = "", InfoTitle = ""
         };
         AddTray();
@@ -50,7 +53,11 @@ internal sealed class DesktopBridge : IDisposable
     public bool SetHotkey(AppSettings settings)
     {
         NativeMethods.UnregisterHotKey(_hwnd, 1);
-        return NativeMethods.RegisterHotKey(_hwnd, 1, settings.HotkeyModifiers | 0x4000, settings.HotkeyKey);
+        NativeMethods.UnregisterHotKey(_hwnd, 2);
+        if (settings.PhraseHotkeyKey != 0 && settings.HotkeyModifiers == settings.PhraseHotkeyModifiers && settings.HotkeyKey == settings.PhraseHotkeyKey) return false;
+        var history = NativeMethods.RegisterHotKey(_hwnd, 1, settings.HotkeyModifiers | 0x4000, settings.HotkeyKey);
+        var phrases = settings.PhraseHotkeyKey == 0 || NativeMethods.RegisterHotKey(_hwnd, 2, settings.PhraseHotkeyModifiers | 0x4000, settings.PhraseHotkeyKey);
+        return history && phrases;
     }
     private nint WindowMessage(nint hwnd, uint message, nuint wParam, nint lParam, nuint id, nuint data)
     {
@@ -62,6 +69,7 @@ internal sealed class DesktopBridge : IDisposable
             Marshal.StructureToPtr(limits, lParam, false);
             return 0;
         }
+        if (message == 0x0312 && wParam == 2) { Command?.Invoke("phrases"); return 0; }
         if (message == 0x0312 && wParam == 1) { Command?.Invoke("quick"); return 0; }
         if (message == _taskbarCreated) { AddTray(); return 0; }
         if (message == TrayMessage)
@@ -80,6 +88,7 @@ internal sealed class DesktopBridge : IDisposable
         {
             if (SyncStatus != "") NativeMethods.AppendMenu(menu, 2, 0, SyncStatus.Length > 70 ? SyncStatus[..70] : SyncStatus);
             NativeMethods.AppendMenu(menu, 0, 1, "打开历史");
+            NativeMethods.AppendMenu(menu, 0, 5, "打开快捷短语");
             NativeMethods.AppendMenu(menu, 0, 2, Paused ? "恢复记录" : "暂停记录");
             NativeMethods.AppendMenu(menu, 0, 3, "设置");
             NativeMethods.AppendMenu(menu, 0x800, 0, "");
@@ -88,14 +97,16 @@ internal sealed class DesktopBridge : IDisposable
             NativeMethods.SetForegroundWindow(_hwnd);
             var command = NativeMethods.TrackPopupMenu(menu, 0x0100 | 0x0002, point.X, point.Y, 0, _hwnd, 0);
             NativeMethods.PostMessage(_hwnd, 0, 0, 0);
-            if (command != 0) Command?.Invoke(command switch { 1 => "history", 2 => "pause", 3 => "settings", _ => "quit" });
+            if (command != 0) Command?.Invoke(command switch { 1 => "history", 2 => "pause", 3 => "settings", 5 => "phrases", _ => "quit" });
         }
         finally { NativeMethods.DestroyMenu(menu); }
     }
     public void Dispose()
     {
         NativeMethods.UnregisterHotKey(_hwnd, 1);
+        NativeMethods.UnregisterHotKey(_hwnd, 2);
         NativeMethods.Shell_NotifyIcon(2, ref _tray);
+        if (_trayIcon != 0) { NativeMethods.DestroyIcon(_trayIcon); _trayIcon = 0; }
         if (_hook != 0) NativeMethods.UnhookWinEvent(_hook);
         NativeMethods.RemoveWindowSubclass(_hwnd, _subclass, 1);
     }

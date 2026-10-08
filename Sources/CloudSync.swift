@@ -15,6 +15,7 @@ struct SyncConfiguration: Codable {
     var syncText = true
     var syncImages = true
     var syncFiles = true
+    var syncPhrases: Bool? = true
     var keepSignedIn = true
     var allowLocalHttp = false
     var serverInstanceId: String?
@@ -47,6 +48,9 @@ final class CloudSync: ObservableObject {
     @Published var config: SyncConfiguration
     @Published var status = "未登录"
     @Published var busy = false
+    @Published private(set) var phraseLibrary = QuickPhraseLibrary()
+    @Published private(set) var phraseSpace: String?
+    private var phraseSnapshot: (id: String, space: String, library: QuickPhraseLibrary)?
     private unowned let store: ClipboardStore
     private var process: Process?
     private var input: FileHandle?
@@ -149,13 +153,25 @@ final class CloudSync: ObservableObject {
             case "persist":
                 guard let value = params["session"], let credential = params["credentialId"] as? String else { throw SyncFailure("登录信息格式无效。") }
                 let data = try JSONSerialization.data(withJSONObject: value)
-                if credential != config.credentialId { store.captureSyncSpace = nil }
+                if credential != config.credentialId { store.captureSyncSpace = nil; clearPhraseAccount() }
                 if params["keepSignedIn"] as? Bool == true { try SyncKeychain.write(credential, data: data) } else { SyncKeychain.delete(credential) }
                 session = data
             case "space":
-                space = params["space"] as? String; store.activeSyncSpace = space; store.captureSyncSpace = space; UserDefaults.standard.set(space, forKey: "activeSyncSpace")
+                space = params["space"] as? String; if session != nil { phraseSpace = space }; store.activeSyncSpace = space; store.captureSyncSpace = space; UserDefaults.standard.set(space, forKey: "activeSyncSpace")
             case "configuration":
                 if let value = params["config"] { config = try JSONDecoder().decode(SyncConfiguration.self, from: JSONSerialization.data(withJSONObject: value)); saveConfiguration() }
+            case "phraseLibraryBegin":
+                if let incomingSpace = params["space"] as? String, incomingSpace == phraseSpace, session != nil, let snapshotId = params["snapshotId"] as? String {
+                    phraseSnapshot = (snapshotId, incomingSpace, QuickPhraseLibrary(pendingIds: params["pendingIds"] as? [String] ?? [], status: params["status"] as? String ?? "", supported: params["supported"] as? Bool ?? false))
+                }
+            case "phraseLibraryPage":
+                if var snapshot = phraseSnapshot, snapshot.space == phraseSpace, snapshot.id == params["snapshotId"] as? String, params["space"] as? String == snapshot.space {
+                    if let values = params["entities"] { snapshot.library.entities += try JSONDecoder().decode([QuickPhrase].self, from: JSONSerialization.data(withJSONObject: values)) }
+                    if let values = params["failures"] { snapshot.library.failures += try JSONDecoder().decode([PhraseFailureDTO].self, from: JSONSerialization.data(withJSONObject: values)) }
+                    phraseSnapshot = snapshot
+                }
+            case "phraseLibraryEnd":
+                if let snapshot = phraseSnapshot, snapshot.space == phraseSpace, snapshot.id == params["snapshotId"] as? String, params["space"] as? String == snapshot.space, session != nil { phraseLibrary = snapshot.library; phraseSnapshot = nil }
             case "bind": bind(params)
             case "receive": try receive(params)
             default: throw SyncFailure("同步组件返回未知操作。")
@@ -225,6 +241,7 @@ final class CloudSync: ObservableObject {
     func test(server: String) async throws { _ = try await command("test", params: ["server": server]); status = "连接成功，服务器协议兼容。" }
     func login(server: String, username: String, password: String, device: String, remember: Bool, importMode: Int) async throws {
         let oldCredential = config.credentialId
+        clearPhraseAccount()
         var proposed = config; proposed.serverUrl = server.trimmingCharacters(in: .whitespacesAndNewlines); proposed.username = username.trimmingCharacters(in: .whitespacesAndNewlines); proposed.deviceName = device; proposed.keepSignedIn = remember
         let result = try await command("login", params: ["config": dictionary(proposed), "password": password])
         guard let response = try JSONSerialization.jsonObject(with: result) as? [String: Any], let value = response["config"] else { throw SyncFailure("登录响应无效。") }
@@ -238,6 +255,7 @@ final class CloudSync: ObservableObject {
         if let response = try JSONSerialization.jsonObject(with: data) as? [String: Any], let path = response["path"] as? String { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
     }
     func logout() async throws {
+        session = nil; clearPhraseAccount()
         let result = try await command("logout"); let response = try JSONSerialization.jsonObject(with: result) as? [String: Any]
         session = nil; store.captureSyncSpace = nil; SyncKeychain.delete(config.credentialId); config.enabled = false; saveConfiguration()
         if let token = response?["revokeToken"] as? String, let server = response?["server"] as? String {
@@ -245,6 +263,19 @@ final class CloudSync: ObservableObject {
             var ids = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []; ids.append(id); UserDefaults.standard.set(ids, forKey: "syncRevocations"); await retryRevocations()
         }
     }
+    private func clearPhraseAccount() { phraseSpace = nil; phraseLibrary = QuickPhraseLibrary(); phraseSnapshot = nil }
+    func reloadPhrases() async throws { _ = try await command("phrases") }
+    func savePhrase(_ entity: QuickPhrase, space: String, newGroup: QuickPhrase? = nil, delete: Bool = false) async throws {
+        guard phraseSpace == space, session != nil else { throw SyncFailure("账号已改变，请重新打开短语。") }
+        var params: [String: Any] = ["entity": dictionary(entity), "space": space, "delete": delete]
+        if let newGroup { params["newGroup"] = dictionary(newGroup) }
+        _ = try await command("phraseSave", params: params)
+    }
+    func resolvePhrase(_ id: String, choice: String, space: String) async throws {
+        guard phraseSpace == space, session != nil else { throw SyncFailure("账号已改变，请重新打开短语。") }
+        _ = try await command("phraseResolve", params: ["failureId": id, "choice": choice, "space": space])
+    }
+    func syncPhrasesNow() async throws { _ = try await command("phraseSync") }
     private func retryRevocations() async {
         let pending = UserDefaults.standard.stringArray(forKey: "syncRevocations") ?? []
         for id in pending {

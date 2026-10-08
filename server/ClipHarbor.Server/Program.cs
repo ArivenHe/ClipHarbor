@@ -31,6 +31,7 @@ builder.Services.AddSingleton(new Database(connectionString));
 builder.Services.AddDataProtection().SetApplicationName("ClipHarbor.Sync").PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
 builder.Services.AddSingleton<Authentication>(); builder.Services.AddSingleton<SyncStore>(); builder.Services.AddSingleton<EventHub>();
 builder.Services.AddSingleton<AdminAuthentication>(); builder.Services.AddSingleton<AdminStore>();
+builder.Services.AddSingleton<QuickPhraseStore>();
 builder.Services.AddSingleton(provider => new Attachments(provider.GetRequiredService<Database>(), dataDirectory));
 builder.Services.AddHostedService(provider => new Maintenance(provider.GetRequiredService<Database>(), provider.GetRequiredService<EventHub>(), dataDirectory, provider.GetRequiredService<ILogger<Maintenance>>()));
 builder.Services.ConfigureHttpJsonOptions(options => { options.SerializerOptions.PropertyNamingPolicy = Protocol.Json.PropertyNamingPolicy; options.SerializerOptions.DefaultIgnoreCondition = Protocol.Json.DefaultIgnoreCondition; });
@@ -94,8 +95,9 @@ app.Use(async (context, next) =>
 app.UseRateLimiter(); app.UseWebSockets(new() { KeepAliveInterval = TimeSpan.FromSeconds(15) });
 app.UseStaticFiles();
 app.MapAdmin();
+app.MapQuickPhrases();
 app.MapGet("/healthz", async () => { await using var connection = await database.Open(); await Database.Scalar(connection, null, "SELECT 1"); return Results.Ok(new { status = "ok", instanceId, commit = Environment.GetEnvironmentVariable("CLIPHARBOR_BUILD_COMMIT") ?? "development" }); });
-app.MapGet("/api/v1/meta", () => new ServerMeta("ClipHarbor.Sync", instanceId, Protocol.Version, Protocol.PartBytes, Protocol.MaxFileBytes, Protocol.MaxImageBytes, Protocol.MaxBatchBytes, Protocol.QuotaBytes));
+app.MapGet("/api/v1/meta", () => new ServerMeta("ClipHarbor.Sync", instanceId, Protocol.Version, Protocol.PartBytes, Protocol.MaxFileBytes, Protocol.MaxImageBytes, Protocol.MaxBatchBytes, Protocol.QuotaBytes, new SyncFeatures(), new PhraseLimits()));
 app.MapPost("/api/v1/auth/login", async (LoginRequest request) => await auth.Login(request)).RequireRateLimiting("login");
 app.MapPost("/api/v1/auth/refresh", async (RefreshRequest request) => await auth.Refresh(request.RefreshToken)).RequireRateLimiting("login");
 app.MapPost("/api/v1/auth/logout", async (LogoutRequest request, HttpContext context) =>
@@ -107,7 +109,7 @@ app.MapPost("/api/v1/auth/logout", async (LogoutRequest request, HttpContext con
 app.MapGet("/api/v1/account", async (HttpContext context) =>
 {
     var session = await auth.Require(context); await using var connection = await database.Open();
-    var used = Convert.ToInt64(await Database.Scalar(connection, null, "SELECT ((SELECT coalesce(sum(byte_length),0) FROM uploads WHERE account_id=$1)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE account_id=$1 AND NOT deleted))::bigint", session.AccountId));
+    var used = Convert.ToInt64(await Database.Scalar(connection, null, "SELECT ((SELECT coalesce(sum(byte_length),0) FROM uploads WHERE account_id=$1)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE account_id=$1 AND NOT deleted)+coalesce((SELECT used_bytes FROM quick_phrase_usage WHERE account_id=$1),0))::bigint", session.AccountId));
     return Results.Ok(new { accountId = session.AccountId, username = session.Username, syncEpoch = session.Epoch, quotaBytes = Protocol.QuotaBytes, usedBytes = used });
 });
 app.MapGet("/api/v1/devices", async (HttpContext context) =>

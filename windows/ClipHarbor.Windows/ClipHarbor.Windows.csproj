@@ -17,8 +17,11 @@
     <Nullable>enable</Nullable>
     <Version>0.3.0</Version>
     <AssemblyName>ClipHarbor</AssemblyName>
+    <ApplicationIcon>../../Resources/Brand/ClipHarbor.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../Resources/Brand/ClipHarbor.ico" Link="Assets/ClipHarbor.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../Resources/Brand/ClipHarbor.png" Link="Assets/ClipHarbor.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4948" />
     <ProjectReference Include="../ClipHarbor.Core/ClipHarbor.Core.csproj" />

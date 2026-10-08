@@ -13,13 +13,21 @@ targets:
   ClipHarbor:
     type: application
     platform: macOS
-    sources: [Sources]
+    sources:
+      - Sources
+      - path: Resources/Brand/ClipHarbor.icns
+        buildPhase: resources
+      - path: Resources/Brand/ClipHarbor.png
+        buildPhase: resources
+      - path: Resources/quick-phrases.zh-CN.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.arivenhe.ClipHarbor
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: 拾贴
         INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleIconFile: ClipHarbor.icns
         MARKETING_VERSION: 0.3.0
         CURRENT_PROJECT_VERSION: 5
         ENABLE_HARDENED_RUNTIME: YES

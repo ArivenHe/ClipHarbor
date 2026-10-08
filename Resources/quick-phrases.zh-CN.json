@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "catalogVersion": 1,
+  "locale": "zh-CN",
+  "phrases": [
+    {
+      "presetId": "communication.received",
+      "presetVersion": 1,
+      "title": "确认收到",
+      "body": "收到，谢谢！",
+      "alias": "ack",
+      "categoryKey": "communication",
+      "categoryName": "日常沟通"
+    },
+    {
+      "presetId": "communication.later",
+      "presetVersion": 1,
+      "title": "稍后回复",
+      "body": "我现在不方便详细回复，稍后联系你。",
+      "alias": null,
+      "categoryKey": "communication",
+      "categoryName": "日常沟通"
+    },
+    {
+      "presetId": "communication.thanks",
+      "presetVersion": 1,
+      "title": "表示感谢",
+      "body": "谢谢你的帮助，辛苦了！",
+      "alias": null,
+      "categoryKey": "communication",
+      "categoryName": "日常沟通"
+    },
+    {
+      "presetId": "communication.closing",
+      "presetVersion": 1,
+      "title": "礼貌结束",
+      "body": "好的，感谢沟通，有需要我们再联系。",
+      "alias": null,
+      "categoryKey": "communication",
+      "categoryName": "日常沟通"
+    },
+    {
+      "presetId": "work.task",
+      "presetVersion": 1,
+      "title": "接收任务",
+      "body": "收到，我会先确认需求，再同步处理计划。",
+      "alias": null,
+      "categoryKey": "work",
+      "categoryName": "工作协作"
+    },
+    {
+      "presetId": "work.details",
+      "presetVersion": 1,
+      "title": "补充信息",
+      "body": "为了准确处理，请补充具体场景、预期结果和相关资料。",
+      "alias": null,
+      "categoryKey": "work",
+      "categoryName": "工作协作"
+    },
+    {
+      "presetId": "work.progress",
+      "presetVersion": 1,
+      "title": "进度同步",
+      "body": "目前正在处理中，有进展后我会及时同步。",
+      "alias": null,
+      "categoryKey": "work",
+      "categoryName": "工作协作"
+    },
+    {
+      "presetId": "work.deadline",
+      "presetVersion": 1,
+      "title": "确认时间",
+      "body": "请确认一下期望完成时间，方便安排后续工作。",
+      "alias": null,
+      "categoryKey": "work",
+      "categoryName": "工作协作"
+    },
+    {
+      "presetId": "work.review",
+      "presetVersion": 1,
+      "title": "请求检查",
+      "body": "相关内容已整理，请帮忙检查；如需调整，请直接指出。",
+      "alias": null,
+      "categoryKey": "work",
+      "categoryName": "工作协作"
+    },
+    {
+      "presetId": "support.hello",
+      "presetVersion": 1,
+      "title": "问候",
+      "body": "您好，请问有什么可以帮您？",
+      "alias": null,
+      "categoryKey": "support",
+      "categoryName": "客户回复"
+    },
+    {
+      "presetId": "support.feedback",
+      "presetVersion": 1,
+      "title": "问题反馈",
+      "body": "收到您的反馈，我会先核实情况，再向您回复处理结果。",
+      "alias": null,
+      "categoryKey": "support",
+      "categoryName": "客户回复"
+    },
+    {
+      "presetId": "support.reproduce",
+      "presetVersion": 1,
+      "title": "提供复现信息",
+      "body": "为了进一步排查，请提供操作步骤、出现时间及相关截图。",
+      "alias": null,
+      "categoryKey": "support",
+      "categoryName": "客户回复"
+    },
+    {
+      "presetId": "mail.opening",
+      "presetVersion": 1,
+      "title": "邮件开头",
+      "body": "您好，感谢您的来信。",
+      "alias": null,
+      "categoryKey": "mail",
+      "categoryName": "邮件沟通"
+    },
+    {
+      "presetId": "mail.attachment",
+      "presetVersion": 1,
+      "title": "附件说明",
+      "body": "相关资料见附件，请查收。",
+      "alias": null,
+      "categoryKey": "mail",
+      "categoryName": "邮件沟通"
+    },
+    {
+      "presetId": "mail.closing",
+      "presetVersion": 1,
+      "title": "邮件结尾",
+      "body": "感谢您的时间，期待您的回复。",
+      "alias": null,
+      "categoryKey": "mail",
+      "categoryName": "邮件沟通"
+    }
+  ]
+}

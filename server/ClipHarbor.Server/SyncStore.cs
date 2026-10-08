@@ -58,7 +58,7 @@ public sealed class SyncStore(Database database)
                     {
                         var count = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT count(*) FROM records WHERE account_id=$1 AND NOT deleted", session.AccountId));
                         if (count >= 10_000) throw new ApiException(409, "QUOTA_EXCEEDED", "云端历史数量已满。");
-                        var used = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT (SELECT coalesce(sum(byte_length),0) FROM uploads WHERE account_id=$1)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE account_id=$1 AND NOT deleted)", session.AccountId));
+                        var used = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT (SELECT coalesce(sum(byte_length),0) FROM uploads WHERE account_id=$1)+(SELECT coalesce(sum(octet_length(data::text)),0) FROM records WHERE account_id=$1 AND NOT deleted)+coalesce((SELECT used_bytes FROM quick_phrase_usage WHERE account_id=$1),0)", session.AccountId));
                         if (used + System.Text.Encoding.UTF8.GetByteCount(Protocol.Encode(record)) > Protocol.QuotaBytes) throw new ApiException(409, "QUOTA_EXCEEDED", "账号存储容量已满。");
                         record.OriginDeviceId = session.DeviceId.ToString(); record.DeletedAt = null;
                         record.FavoriteRevision = record.NoteRevision = sequence + 1;

@@ -23,7 +23,8 @@ public sealed class Attachments(Database database, string directory)
         {
             var used = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT coalesce(sum(byte_length),0)::bigint FROM uploads WHERE account_id=$1", session.AccountId));
             var textBytes = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT coalesce(sum(octet_length(data::text)),0)::bigint FROM records WHERE account_id=$1 AND NOT deleted", session.AccountId));
-            if (used + textBytes + request.ByteLength > Protocol.QuotaBytes) throw new ApiException(409, "QUOTA_EXCEEDED", "账号存储容量已满。");
+            var phraseBytes = Convert.ToInt64(await Database.Scalar(connection, transaction, "SELECT coalesce(used_bytes,0) FROM quick_phrase_usage WHERE account_id=$1", session.AccountId) ?? 0L);
+            if (used + textBytes + phraseBytes + request.ByteLength > Protocol.QuotaBytes) throw new ApiException(409, "QUOTA_EXCEEDED", "账号存储容量已满。");
             existing = Guid.NewGuid();
             await Database.Execute(connection, transaction, "INSERT INTO uploads(id,account_id,kind,byte_length,sha256) VALUES($1,$2,$3,$4,$5)", existing, session.AccountId, request.Kind, request.ByteLength, request.Sha256);
         }

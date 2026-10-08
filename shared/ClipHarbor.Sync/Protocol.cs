@@ -127,7 +127,7 @@ public sealed class WireRecord
     }
 }
 
-public sealed record ServerMeta(string Product, string InstanceId, int ProtocolVersion, int PartBytes, long MaxFileBytes, long MaxImageBytes, long MaxBatchBytes, long QuotaBytes);
+public sealed record ServerMeta(string Product, string InstanceId, int ProtocolVersion, int PartBytes, long MaxFileBytes, long MaxImageBytes, long MaxBatchBytes, long QuotaBytes, SyncFeatures? Features = null, PhraseLimits? PhraseLimits = null);
 public sealed record LoginRequest(string Username, string Password, string DeviceName, string DeviceId);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record SessionTokens(string AccountId, string Username, string DeviceId, string SessionId, string AccessToken, string RefreshToken, string AccessExpiresAt, string RefreshExpiresAt, string RevokeToken, string SyncEpoch);
@@ -160,6 +160,7 @@ public sealed class SyncConfig
     public bool SyncText { get; set; } = true;
     public bool SyncImages { get; set; } = true;
     public bool SyncFiles { get; set; } = true;
+    public bool SyncPhrases { get; set; } = true;
     public bool KeepSignedIn { get; set; } = true;
     public bool AllowLocalHttp { get; set; }
     public bool Accepts(string kind) => kind switch { "image" => SyncImages, "files" => SyncFiles, _ => SyncText };

@@ -69,3 +69,39 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 );
 CREATE INDEX IF NOT EXISTS sessions_account_device ON sessions(account_id,device_id);
 UPDATE instance SET schema_version=2 WHERE schema_version=1;
+-- Quick phrases are an additive component migration. Keeping schema_version=2
+-- permits rolling back to existing servers; component-aware servers check this version.
+ALTER TABLE instance ADD COLUMN IF NOT EXISTS phrase_schema_version integer NOT NULL DEFAULT 1;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phrase_sequence bigint NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS quick_phrases (
+ account_id uuid NOT NULL REFERENCES accounts(id), id text NOT NULL, deleted boolean NOT NULL DEFAULT false,
+ data jsonb NOT NULL, PRIMARY KEY(account_id,id)
+);
+CREATE TABLE IF NOT EXISTS quick_phrase_groups (
+ account_id uuid NOT NULL REFERENCES accounts(id), id text NOT NULL, deleted boolean NOT NULL DEFAULT false,
+ data jsonb NOT NULL, PRIMARY KEY(account_id,id)
+);
+CREATE TABLE IF NOT EXISTS quick_phrase_preset_preferences (
+ account_id uuid NOT NULL REFERENCES accounts(id), id text NOT NULL, deleted boolean NOT NULL DEFAULT false,
+ data jsonb NOT NULL, PRIMARY KEY(account_id,id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS quick_phrases_alias ON quick_phrases(account_id,(data->>'alias')) WHERE NOT deleted AND data->>'alias' IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS quick_phrases_origin ON quick_phrases(account_id,(data->>'originPresetId')) WHERE NOT deleted AND data->>'originPresetId' IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS quick_groups_name ON quick_phrase_groups(account_id,lower(data->>'title')) WHERE NOT deleted;
+CREATE TABLE IF NOT EXISTS quick_phrase_changes (
+ account_id uuid NOT NULL REFERENCES accounts(id), sequence bigint NOT NULL, data jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(account_id,sequence)
+);
+CREATE TABLE IF NOT EXISTS quick_phrase_operations (
+ account_id uuid NOT NULL REFERENCES accounts(id), id uuid NOT NULL, result jsonb NOT NULL, PRIMARY KEY(account_id,id)
+);
+CREATE TABLE IF NOT EXISTS quick_phrase_snapshots (
+ id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES accounts(id), cursor bigint NOT NULL,
+ epoch uuid NOT NULL, entities jsonb NOT NULL, expires_at timestamptz NOT NULL DEFAULT now()+interval '1 hour'
+);
+CREATE OR REPLACE VIEW quick_phrase_usage AS
+ SELECT account_id,sum(octet_length(data::text))::bigint AS used_bytes FROM (
+  SELECT account_id,data FROM quick_phrases WHERE NOT deleted UNION ALL
+  SELECT account_id,data FROM quick_phrase_groups WHERE NOT deleted UNION ALL
+  SELECT account_id,data FROM quick_phrase_preset_preferences WHERE NOT deleted
+ ) items GROUP BY account_id;

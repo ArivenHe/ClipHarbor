@@ -28,7 +28,7 @@ struct KeyCombination: Codable, Equatable {
 }
 
 enum ShortcutAction: String, CaseIterable, Identifiable {
-    case panel, history, settings, pause, quit
+    case panel, phrasePanel, history, settings, pause, quit
     case toggleText, toggleImages, toggleFiles, toggleAutoPaste, togglePlainText, toggleLogin, toggleFavoritesExempt, cleanup, dataDirectory, clearAll, permissions, resetShortcuts, projectPage
     case toggleLearning, toggleScreenshots, resetLearning, screenshotFolder, learningSettings, screenshotSettings
     case generalSettings, shortcutSettings, recordingSettings, privacySettings, aboutSettings
@@ -39,7 +39,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var global: Bool {
         switch self {
-        case .toggleLearning, .toggleScreenshots, .resetLearning, .screenshotFolder, .learningSettings, .screenshotSettings, .panel, .history, .pause, .toggleText, .toggleImages, .toggleFiles, .toggleAutoPaste, .togglePlainText, .toggleLogin, .toggleFavoritesExempt, .cleanup, .dataDirectory, .clearAll, .permissions, .resetShortcuts, .projectPage, .generalSettings, .shortcutSettings, .recordingSettings, .privacySettings, .aboutSettings: true
+        case .toggleLearning, .toggleScreenshots, .resetLearning, .screenshotFolder, .learningSettings, .screenshotSettings, .panel, .phrasePanel, .history, .pause, .toggleText, .toggleImages, .toggleFiles, .toggleAutoPaste, .togglePlainText, .toggleLogin, .toggleFavoritesExempt, .cleanup, .dataDirectory, .clearAll, .permissions, .resetShortcuts, .projectPage, .generalSettings, .shortcutSettings, .recordingSettings, .privacySettings, .aboutSettings: true
         default: false
         }
     }
@@ -58,7 +58,7 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         case .resetLearning: "重置学习记录（确认）"; case .screenshotFolder: "选择截图监听目录"
         case .learningSettings: "常用内容设置"; case .screenshotSettings: "截图设置"
         case .frequent: "常用内容"; case .screenshots: "系统截图"; case .excludeLearning: "排除／允许学习选中内容"
-        case .panel: "打开／关闭快捷面板"; case .history: "打开历史"; case .settings: "打开设置"; case .pause: "暂停／恢复记录"; case .quit: "退出拾贴"
+        case .phrasePanel: "直接打开快捷短语"; case .panel: "打开／关闭快捷面板"; case .history: "打开历史"; case .settings: "打开设置"; case .pause: "暂停／恢复记录"; case .quit: "退出拾贴"
         case .toggleText: "开启／关闭文本记录"; case .toggleImages: "开启／关闭图片记录"; case .toggleFiles: "开启／关闭文件记录"
         case .toggleAutoPaste: "开启／关闭自动粘贴"; case .togglePlainText: "切换默认纯文本复制"
         case .toggleLogin: "开启／关闭登录启动"; case .toggleFavoritesExempt: "切换收藏永久保留"

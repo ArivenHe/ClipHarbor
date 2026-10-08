@@ -16,8 +16,8 @@ dotnet "$server" --create-admin consoleadmin --password-file "$password_file"
 CLIPHARBOR_LOGIN_RATE_LIMIT=200 ASPNETCORE_URLS="${CLIPHARBOR_TEST_URL:-http://localhost:28080}" dotnet "$server" > "$log_file" 2>&1 &
 server_pid=$!
 for _attempt in $(seq 1 60); do
-  if curl --fail --silent "${CLIPHARBOR_TEST_URL:-http://localhost:28080}/healthz" >/dev/null; then break; fi
   if ! kill -0 "$server_pid" 2>/dev/null; then cat "$log_file"; exit 1; fi
+  if curl --fail --silent "${CLIPHARBOR_TEST_URL:-http://localhost:28080}/healthz" >/dev/null; then break; fi
   sleep 1
 done
 if ! dotnet run --project integration/ClipHarbor.IntegrationTests/ClipHarbor.IntegrationTests.csproj -c Release; then cat "$log_file"; exit 1; fi

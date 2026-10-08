@@ -32,6 +32,8 @@ public sealed class AppSettings
     public string ScreenshotFolder { get; set; } = "";
     public string ExcludedApps { get; set; } = "";
     public uint HotkeyModifiers { get; set; } = 3; // Ctrl + Alt
+    public uint PhraseHotkeyModifiers { get; set; }
+    public uint PhraseHotkeyKey { get; set; }
     public uint HotkeyKey { get; set; } = 0x56; // V
     public RetentionRule Retention { get; set; } = new();
     public Dictionary<ClipKind, RetentionRule> TypeRetention { get; set; } = Enum.GetValues<ClipKind>().ToDictionary(k => k, _ => new RetentionRule());
