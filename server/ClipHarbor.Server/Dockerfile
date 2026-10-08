@@ -3,6 +3,7 @@ WORKDIR /src
 COPY shared/ClipHarbor.Sync/ClipHarbor.Sync.csproj shared/ClipHarbor.Sync/
 COPY server/ClipHarbor.Server/ClipHarbor.Server.csproj server/ClipHarbor.Server/
 RUN dotnet restore server/ClipHarbor.Server/ClipHarbor.Server.csproj
+COPY Resources/quick-phrases.zh-CN.json Resources/
 COPY shared/ClipHarbor.Sync/ shared/ClipHarbor.Sync/
 COPY server/ClipHarbor.Server/ server/ClipHarbor.Server/
 RUN dotnet publish server/ClipHarbor.Server/ClipHarbor.Server.csproj -c Release --no-restore -o /app

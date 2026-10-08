@@ -28,8 +28,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: 拾贴
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_CFBundleIconFile: ClipHarbor.icns
-        MARKETING_VERSION: 0.3.0
-        CURRENT_PROJECT_VERSION: 5
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 6
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
   ClipHarborTests:
