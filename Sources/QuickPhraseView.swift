@@ -181,7 +181,7 @@ private struct QuickPhraseEditor: View {
     @State private var busy = false
     @State private var finished = false
     @State private var confirmDiscard = false
-    init(store: QuickPhraseStore, request: PhraseEditorRequest) { self.store = store; self.request = request; _draft = State(initialValue: request.entity); _newGroupName = State(initialValue: store.draftGroupName(in: request.space, id: request.entity.id)) }
+    init(store: QuickPhraseStore, request: PhraseEditorRequest) { self.store = store; self.request = request; _draft = State(initialValue: request.entity); _newGroupName = State(initialValue: store.draftGroupName(in: request.space, id: request.entity.id) ?? (request.entity.revision == "0" && request.entity.groupId == nil ? store.catalog.first(where: { $0.id == request.entity.originPresetId })?.categoryName ?? "" : "")) }
     private var dirty: Bool { draft != request.entity || !newGroupName.isEmpty }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -212,9 +212,7 @@ private struct QuickPhraseEditor: View {
                 var entity = draft; var group: QuickPhrase?
                 let groupName = newGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !groupName.isEmpty { if let existing = store.groups.first(where: { $0.title.caseInsensitiveCompare(groupName) == .orderedSame }) { entity.groupId = existing.id } else { group = QuickPhrase(kind: "group", title: groupName); entity.groupId = group?.id } }
-                else if entity.kind == "phrase", entity.revision == "0", let presetId = entity.originPresetId, entity.groupId == nil, let preset = store.catalog.first(where: { $0.id == presetId }) {
-                    if let existing = store.groups.first(where: { $0.title == preset.categoryName }) { entity.groupId = existing.id } else { group = QuickPhrase(kind: "group", title: preset.categoryName); entity.groupId = group?.id }
-                }
+
                 try await store.save(entity, in: request.space, newGroup: group); store.clearDraft(in: request.space, id: draft.id); finished = true; dismiss()
             } catch { self.error = error.localizedDescription; store.retainDraft(draft, in: request.space, groupName: newGroupName) }
         }

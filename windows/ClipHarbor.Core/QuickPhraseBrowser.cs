@@ -9,7 +9,7 @@ public sealed record PhraseRow(PhraseEntity Entity, PresetPhrase? Preset, string
     public string Id => (Preset is null ? "personal:" : "preset:") + Entity.Id;
     public bool Personal => Preset is null;
     public string Source => Personal ? Entity.OriginPresetId is null ? "我的短语" : "我的 · 自定义预置" : "预置短语";
-    public string Metadata => $"{Source} · {Category}{(Pending ? " · 待同步" : "")}{(Entity.Hidden ? " · 已隐藏" : "")}";
+    public string Metadata => $"{(Entity.Pinned ? "置顶 · " : "")}{Source} · {Category}{(Pending ? " · 待同步" : "")}{(Entity.Hidden ? " · 已隐藏" : "")}";
     public string Preview => Entity.Body.Replace('\n', ' ');
 }
 
@@ -64,7 +64,7 @@ public sealed class PhraseLocalState
         return Path.Combine(directory, $"draft-{space}-{id}.json");
     }
     public void Retain(string space, PhraseEntity draft, string groupName = "") { Write(DraftPath(space, draft.Id), Protocol.Encode(draft)); Write(DraftPath(space, draft.Id) + ".group", groupName); }
-    public string GroupName(string space, string id) { var path = DraftPath(space, id) + ".group"; return File.Exists(path) ? File.ReadAllText(path) : ""; }
+    public string? GroupName(string space, string id) { var path = DraftPath(space, id) + ".group"; return File.Exists(path) ? File.ReadAllText(path) : null; }
     public void Clear(string space, string id) { File.Delete(DraftPath(space, id)); File.Delete(DraftPath(space, id) + ".group"); }
     public List<PhraseEntity> Drafts(string space) => Directory.EnumerateFiles(directory, $"draft-{space}-*.json").Select(path => Protocol.Decode<PhraseEntity>(File.ReadAllText(path))).ToList();
     private static void Write(string path, string json) { var temp = path + ".tmp"; File.WriteAllText(temp, json, new UTF8Encoding(false)); File.Move(temp, path, true); }

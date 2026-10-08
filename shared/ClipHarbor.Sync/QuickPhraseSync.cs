@@ -44,7 +44,9 @@ public sealed class QuickPhraseSync : IAsyncDisposable
             entity.Revision=latest.Revision;
         }
         else throw new InvalidDataException("草稿处理方式无效。");
-        await Save(entity,failure.Operation.NewGroup);Journal.DismissFailure(failureId);await Notify();
+        var newGroup = failure.Operation.NewGroup;
+        if (choice == "copy" && entity.GroupId is { } groupId && !Journal.Library().Entities.Any(e => e.Kind == "group" && e.Id == groupId)) { entity.GroupId = null; newGroup = null; }
+        await Save(entity,newGroup);Journal.DismissFailure(failureId);await Notify();
     }
     private async Task Notify()
     {

@@ -38,6 +38,6 @@ final class QuickPhraseStore: ObservableObject {
     private func draftURL(_ space: String, id: String) -> URL { directory.appendingPathComponent("draft-\(space)-\(id).json") }
     func retainDraft(_ entity: QuickPhrase, in space: String, groupName: String = "") { do { try JSONEncoder().encode(entity).write(to: draftURL(space, id: entity.id), options: .atomic); try groupName.write(to: draftURL(space, id: entity.id).appendingPathExtension("group"), atomically: true, encoding: .utf8) } catch { self.error = "保存草稿失败：\(error.localizedDescription)" } }
     func drafts(in space: String) -> [QuickPhrase] { ((try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "json" && $0.lastPathComponent.hasPrefix("draft-\(space)-") }.compactMap { url in (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(QuickPhrase.self, from: $0) } } }
-    func draftGroupName(in space: String, id: String) -> String { (try? String(contentsOf: draftURL(space, id: id).appendingPathExtension("group"), encoding: .utf8)) ?? "" }
+    func draftGroupName(in space: String, id: String) -> String? { try? String(contentsOf: draftURL(space, id: id).appendingPathExtension("group"), encoding: .utf8) }
     func clearDraft(in space: String, id: String) { try? FileManager.default.removeItem(at: draftURL(space, id: id)); try? FileManager.default.removeItem(at: draftURL(space, id: id).appendingPathExtension("group")) }
 }
