@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Package the supplied logo into native icon formats without changing its design.
+"""Package the transparent application artwork into native icon formats.
 
 Run on macOS (sips and iconutil are included with the OS). Published builds use
 the committed outputs and do not need to run this script or install Pillow.
 """
 from pathlib import Path
-import json
 import struct
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parent.parent
 brand = root / "Resources" / "Brand"
-source = brand / "ClipHarbor-source.jpg"
+source = brand / "ClipHarbor-source.png"
 
 
 def png(size, destination):

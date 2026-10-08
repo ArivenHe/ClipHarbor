@@ -24,10 +24,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.arivenhe.ClipHarbor
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: 拾贴
-        INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_CFBundleIconFile: ClipHarbor.icns
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
         MARKETING_VERSION: 0.4.0
         CURRENT_PROJECT_VERSION: 6
         ENABLE_HARDENED_RUNTIME: YES

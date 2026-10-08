@@ -32,7 +32,7 @@ struct ClipHarborApp: App {
             Divider()
             Button("设置…") { delegate.openSettings() }
             Button("退出拾贴") { NSApp.terminate(nil) }
-        } label: { Image(nsImage: AppBrand.menuIcon).accessibilityLabel("拾贴") }
+        } label: { Image(nsImage: AppBrand.menuIcon).renderingMode(.template).accessibilityLabel("拾贴") }
         Settings { SettingsView(store: delegate.store).frame(width: 640, height: 650) }
     }
 }

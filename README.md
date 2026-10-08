@@ -10,7 +10,7 @@
 
 短语编辑及同步不会写入剪贴板；主动使用按现有文本同步规则发布复制事件，使用次数仅保存在本机。需要支持 `quickPhrases = 1` 的新服务端才能维护个人库。详见 [快捷短语设计](docs/QUICK_PHRASES_DESIGN.md)。
 
-两端应用、托盘和关于页面使用同一份用户提供的 Logo；源图及原生图标位于 `Resources/Brand`，可在 macOS 运行 `python3 scripts/generate-icons.py` 重新生成。
+两端应用和关于页面使用统一的青绿色剪贴板图标；macOS 菜单栏使用随系统深浅色变化的单色剪贴板图标。透明源图和原生图标位于 `Resources/Brand`，可在 macOS 运行 `python3 scripts/generate-icons.py` 重新生成。macOS 的图标声明保存在 `Resources/Info.plist`；打包时会检查最终应用的图标声明和资源，避免 Finder 显示默认占位图。
 
 ## 跨设备直接粘贴
 

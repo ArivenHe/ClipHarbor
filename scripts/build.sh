@@ -6,6 +6,7 @@ xcodebuild -project ClipHarbor.xcodeproj -scheme ClipHarbor -configuration Relea
   -derivedDataPath build -destination 'generic/platform=macOS' \
   ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
 APP=build/Build/Products/Release/ClipHarbor.app
+swift integration/verify-app-icons.swift "$APP"
 for architecture in arm64 x64; do
   dotnet publish shared/ClipHarbor.SyncHost/ClipHarbor.SyncHost.csproj -c Release \
     -r "osx-$architecture" --self-contained true -p:PublishSingleFile=true \
